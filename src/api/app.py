@@ -11,9 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.models import Action, FinancialParameters, UserInput
-from src.workflow import create_assistant_graph
+from src.workflow import create_assistant_graph, get_mcp_server
 from src.workflow.state import FinanceState
-from src.workflow.graph import get_mcp_server
 
 # Maximum audio file size (10 MB)
 MAX_AUDIO_SIZE = 10 * 1024 * 1024

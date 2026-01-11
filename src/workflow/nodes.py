@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from src.models import Action, FinancialParameters, LLMNLUResponse
 from src.workflow.state import FinanceState
+from src.workflow.mcp_instance import get_mcp_server
 
 load_dotenv()
 
@@ -132,7 +133,6 @@ def query_node(state: FinanceState) -> Dict:
     """Query execution node.
     
     Executes the requested action on the MCP server.
-    Note: This node requires access to the global mcp_server instance.
     
     Args:
         state: Current workflow state
@@ -140,8 +140,6 @@ def query_node(state: FinanceState) -> Dict:
     Returns:
         Dictionary with query results
     """
-    from src.workflow.graph import get_mcp_server
-    
     mcp_server = get_mcp_server()
     action = state["action"]
     params = state["parameters"]
@@ -176,8 +174,6 @@ def generator_node(state: FinanceState) -> Dict:
     Returns:
         Dictionary with response and updated history
     """
-    from src.workflow.graph import get_mcp_server
-    
     mcp_server = get_mcp_server()
     results = state["query_results"]
     action = state["action"]

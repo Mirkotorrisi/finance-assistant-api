@@ -3,28 +3,7 @@
 from langgraph.graph import StateGraph, END
 from src.workflow.state import FinanceState
 from src.workflow.nodes import asr_node, nlu_node, query_node, generator_node
-from src.business_logic import FinanceMCP, get_initial_data
-
-# Global MCP instance
-_mcp_server = None
-
-
-def get_mcp_server() -> FinanceMCP:
-    """Get the global MCP server instance.
-    
-    Returns:
-        The MCP server instance
-    """
-    global _mcp_server
-    if _mcp_server is None:
-        _mcp_server = FinanceMCP(get_initial_data())
-    return _mcp_server
-
-
-def reset_mcp_server():
-    """Reset the MCP server with fresh data."""
-    global _mcp_server
-    _mcp_server = FinanceMCP(get_initial_data())
+from src.workflow.mcp_instance import get_mcp_server, reset_mcp_server
 
 
 def create_assistant_graph():
