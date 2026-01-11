@@ -209,6 +209,7 @@ async def upload_statement(file: UploadFile = File(...)) -> UploadStatementRespo
         added_transactions = mcp_server.add_transactions_bulk(unique_transactions)
         
         # Process for vectorization (optional - don't fail if it errors)
+        # TODO: Consider moving this to an async background task for better performance
         try:
             vectorization_service = VectorizationService()
             vectorization_service.process_transactions(unique_transactions)

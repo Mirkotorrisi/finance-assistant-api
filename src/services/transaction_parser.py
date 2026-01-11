@@ -134,9 +134,9 @@ class TransactionParser:
         
         # Expense categories
         food_keywords = ['restaurant', 'grocery', 'food', 'supermarket', 'cafe', 'dinner', 'lunch']
-        transport_keywords = ['gas', 'fuel', 'uber', 'taxi', 'bus', 'train', 'parking', 'transport']
+        transport_keywords = ['gas station', 'fuel', 'uber', 'taxi', 'bus', 'train', 'parking', 'transport']
         shopping_keywords = ['amazon', 'shop', 'store', 'retail', 'purchase']
-        utilities_keywords = ['electric', 'water', 'gas', 'internet', 'phone', 'utility']
+        utilities_keywords = ['electric', 'water', 'gas bill', 'internet', 'phone', 'utility']
         rent_keywords = ['rent', 'lease', 'housing']
         
         if any(word in description_lower for word in food_keywords):
@@ -173,19 +173,37 @@ class TransactionParser:
             if not date_match:
                 return None
             
-            date = TransactionParser.parse_date(date_match.group())
+            date_str = date_match.group()
+            date = TransactionParser.parse_date(date_str)
             
             # Try to find amount pattern
             amount_match = re.search(r'[-+]?\$?\€?\£?[\d,]+\.?\d*', text)
             if not amount_match:
                 return None
             
-            amount = TransactionParser.parse_amount(amount_match.group())
+            amount_str = amount_match.group()
+            amount = TransactionParser.parse_amount(amount_str)
             if amount is None:
                 return None
             
-            # Description is the remaining text
-            description = text.replace(date_match.group(), '').replace(amount_match.group(), '').strip()
+            # Description is the text with date and amount removed (use their positions)
+            parts = []
+            last_end = 0
+            
+            # Remove date part
+            if date_match:
+                parts.append(text[last_end:date_match.start()])
+                last_end = date_match.end()
+            
+            # Add middle part (before amount)
+            if amount_match:
+                parts.append(text[last_end:amount_match.start()])
+                last_end = amount_match.end()
+            
+            # Add remaining part
+            parts.append(text[last_end:])
+            
+            description = ' '.join(parts).strip()
             if not description:
                 description = "Transaction"
             

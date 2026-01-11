@@ -13,7 +13,12 @@ class VectorizationService:
     
     def __init__(self):
         """Initialize the vectorization service."""
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            logger.warning("OPENAI_API_KEY not set. Vectorization will be skipped.")
+            self.client = None
+        else:
+            self.client = OpenAI(api_key=api_key)
         self.model = "text-embedding-3-small"
     
     @staticmethod
@@ -58,6 +63,10 @@ class VectorizationService:
         """
         if not chunks:
             return []
+        
+        if not self.client:
+            logger.info("OpenAI client not initialized. Skipping embeddings generation.")
+            return chunks
         
         try:
             # Extract texts for embedding
