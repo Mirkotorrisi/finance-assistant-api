@@ -17,9 +17,19 @@ logger = logging.getLogger(__name__)
 class TransactionParser:
     """Service for parsing extracted data into transaction format."""
     
+    # Maximum description length for LLM categorization to prevent prompt injection
+    MAX_DESCRIPTION_LENGTH = 500
+    
     @staticmethod
     def _get_openai_client() -> Optional[OpenAI]:
         """Get or create OpenAI client.
+        
+        Note: This creates a new client instance each time rather than using a global
+        singleton pattern. This approach is used because:
+        1. The parser is typically used in batch processing contexts where a client
+           is created once per batch in parse_transactions()
+        2. It avoids global state management in a stateless service class
+        3. It allows for easier testing with dependency injection
         
         Returns:
             OpenAI client instance or None if API key is not available
@@ -190,7 +200,7 @@ Respond with ONLY a JSON object in this format:
         
         # Sanitize description to prevent prompt injection
         # Remove control characters and limit length
-        sanitized_description = description.strip()[:500]  # Limit to 500 chars
+        sanitized_description = description.strip()[:TransactionParser.MAX_DESCRIPTION_LENGTH]
         sanitized_description = ''.join(char for char in sanitized_description if char.isprintable() or char.isspace())
         
         user_prompt = f"""Transaction details:
