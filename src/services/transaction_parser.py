@@ -18,6 +18,22 @@ class TransactionParser:
     """Service for parsing extracted data into transaction format."""
     
     @staticmethod
+    def _get_openai_client() -> Optional[OpenAI]:
+        """Get or create OpenAI client.
+        
+        Returns:
+            OpenAI client instance or None if API key is not available
+        """
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return None
+        try:
+            return OpenAI(api_key=api_key)
+        except Exception as e:
+            logger.warning(f"Failed to create OpenAI client: {str(e)}")
+            return None
+    
+    @staticmethod
     def parse_date(date_str: Any) -> Optional[str]:
         """Parse date string into ISO format.
         
@@ -142,11 +158,10 @@ class TransactionParser:
         """
         # Get or create OpenAI client
         if openai_client is None:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                logger.warning("OPENAI_API_KEY not set, falling back to rule-based categorization")
+            openai_client = TransactionParser._get_openai_client()
+            if openai_client is None:
+                logger.warning("OPENAI_API_KEY not set or client creation failed, falling back to rule-based categorization")
                 return TransactionParser._categorize_transaction_fallback(description, amount)
-            openai_client = OpenAI(api_key=api_key)
         
         # Prepare the prompt for the LLM
         transaction_type = "income" if amount > 0 else "expense"
@@ -173,8 +188,13 @@ Respond with ONLY a JSON object in this format:
 
         existing_categories_text = "None - this is the first transaction" if not existing_categories else ", ".join(existing_categories)
         
+        # Sanitize description to prevent prompt injection
+        # Remove control characters and limit length
+        sanitized_description = description.strip()[:500]  # Limit to 500 chars
+        sanitized_description = ''.join(char for char in sanitized_description if char.isprintable() or char.isspace())
+        
         user_prompt = f"""Transaction details:
-- Description: {description}
+- Description: {sanitized_description}
 - Amount: {amount}
 - Type: {transaction_type}
 
@@ -193,7 +213,14 @@ Please assign the most appropriate category for this transaction."""
                 temperature=0.3
             )
             
+            # Validate response has choices
+            if not completion.choices or len(completion.choices) == 0:
+                raise ValueError("API response contains no choices")
+            
             response_text = completion.choices[0].message.content
+            if not response_text:
+                raise ValueError("API response content is empty")
+                
             response_data = json.loads(response_text)
             
             category = response_data.get("category", "other")
@@ -201,9 +228,9 @@ Please assign the most appropriate category for this transaction."""
             reasoning = response_data.get("reasoning", "")
             
             if is_new:
-                logger.info(f"LLM created new category '{category}' for '{description}': {reasoning}")
+                logger.info(f"LLM created new category '{category}' for '{sanitized_description}': {reasoning}")
             else:
-                logger.debug(f"LLM assigned existing category '{category}' for '{description}'")
+                logger.debug(f"LLM assigned existing category '{category}' for '{sanitized_description}'")
             
             return category.lower().strip()
             
@@ -452,12 +479,7 @@ Please assign the most appropriate category for this transaction."""
         # Create a single OpenAI client to reuse across all transactions
         openai_client = None
         if use_llm_categorization:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                try:
-                    openai_client = OpenAI(api_key=api_key)
-                except Exception as e:
-                    logger.warning(f"Failed to create OpenAI client: {str(e)}, will use fallback categorization")
+            openai_client = TransactionParser._get_openai_client()
         
         for i, row in enumerate(rows):
             try:
