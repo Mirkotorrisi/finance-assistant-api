@@ -58,12 +58,19 @@ def init_database() -> None:
             print("Running in PRODUCTION mode - Skipping automatic table creation")
             
     except OperationalError as e:
-        print(f"ERROR: Failed to connect to database: {e}")
-        print("Please check your database configuration and ensure DB_PASSWORD is set correctly")
-        sys.exit(1)
+        print(f"WARNING: Failed to connect to database: {e}")
+        print("The application will fall back to in-memory storage.")
+        print("To use database storage, please check:")
+        print("  1. DB_PASSWORD is set correctly in your .env file")
+        print("  2. Database host is accessible")
+        print("  3. Network/firewall settings allow connection")
+        # Don't exit - let the application fall back to in-memory storage
+        raise
     except Exception as e:
-        print(f"ERROR: Database initialization failed: {e}")
-        sys.exit(1)
+        print(f"WARNING: Database initialization failed: {e}")
+        print("The application will fall back to in-memory storage.")
+        # Don't exit - let the application fall back to in-memory storage
+        raise
 
 
 def get_db() -> Generator[Session, None, None]:

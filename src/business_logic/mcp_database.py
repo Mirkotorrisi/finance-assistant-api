@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import date as date_type
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+from sqlalchemy.exc import IntegrityError
 
 from src.database.models import Transaction, Category
 from src.database.init import get_db_session
@@ -25,10 +26,21 @@ class FinanceMCPDatabase:
         self.db = db_session if db_session else get_db_session()
         self.owns_session = db_session is None
 
-    def __del__(self):
+    def close(self):
         """Close the database session if we own it."""
         if self.owns_session and self.db:
             self.db.close()
+            self.owns_session = False
+
+    def __del__(self):
+        """Cleanup when object is destroyed."""
+        # Close session if it wasn't closed explicitly
+        if hasattr(self, 'owns_session') and self.owns_session and hasattr(self, 'db') and self.db:
+            try:
+                self.db.close()
+            except Exception:
+                # Ignore errors during cleanup
+                pass
 
     def list_transactions(
         self, 
@@ -198,6 +210,11 @@ class FinanceMCPDatabase:
             self.db.add(new_category)
             try:
                 self.db.commit()
-            except Exception:
-                # Category might have been added by another process
+            except IntegrityError:
+                # Category was added by another process concurrently
                 self.db.rollback()
+            except Exception as e:
+                # Other unexpected database errors
+                self.db.rollback()
+                # Log but don't fail - category creation is not critical
+                print(f"Warning: Failed to create category '{category_name}': {e}")

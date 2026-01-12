@@ -131,11 +131,14 @@ class TestDatabaseModels:
     def test_transaction_to_dict(self):
         """Test Transaction to_dict method."""
         from src.database.models import Transaction
-        from datetime import date
+        from datetime import date as date_class, timedelta
+        
+        # Use a date relative to today to avoid future issues
+        test_date = date_class.today() - timedelta(days=1)
         
         transaction = Transaction(
             id=1,
-            date=date(2026, 1, 11),
+            date=test_date,
             amount=-50.0,
             category="food",
             description="Test",
@@ -145,7 +148,7 @@ class TestDatabaseModels:
         result = transaction.to_dict()
         
         assert result['id'] == 1
-        assert result['date'] == '2026-01-11'
+        assert result['date'] == test_date.isoformat()
         assert result['amount'] == -50.0
         assert result['category'] == 'food'
         assert result['description'] == 'Test'

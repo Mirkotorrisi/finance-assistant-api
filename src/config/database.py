@@ -9,13 +9,13 @@ load_dotenv()
 class DatabaseConfig:
     """Database configuration settings."""
     
-    # Connection details
-    HOST = "ai-financial-assistant-bollette.e.aivencloud.com"
-    PORT = 22782
-    DATABASE = "defaultdb"
-    USER = "avnadmin"
+    # Connection details - can be overridden via environment variables
+    HOST = os.getenv("DB_HOST", "ai-financial-assistant-bollette.e.aivencloud.com")
+    PORT = int(os.getenv("DB_PORT", "22782"))
+    DATABASE = os.getenv("DB_NAME", "defaultdb")
+    USER = os.getenv("DB_USER", "avnadmin")
     PASSWORD = os.getenv("DB_PASSWORD", "")
-    SSL_MODE = "require"
+    SSL_MODE = os.getenv("DB_SSL_MODE", "require")
     
     @classmethod
     def get_database_url(cls) -> str:
