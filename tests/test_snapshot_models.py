@@ -1,9 +1,8 @@
 """Unit tests for monthly snapshot models and service."""
 
 import pytest
-from datetime import date, datetime
-from unittest.mock import Mock, patch, MagicMock
-from sqlalchemy.exc import IntegrityError
+from datetime import date
+from unittest.mock import MagicMock
 
 
 @pytest.fixture
