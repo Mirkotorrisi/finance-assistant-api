@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 from contextlib import contextmanager
-from typing import Union, List
+from typing import Union, List, Dict, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
