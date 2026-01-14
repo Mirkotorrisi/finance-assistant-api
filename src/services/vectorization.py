@@ -146,7 +146,7 @@ class RAGService:
             vec2: Second vector
             
         Returns:
-            Cosine similarity score (0-1)
+            Cosine similarity score (-1 to 1, where 1 is most similar)
         """
         # Dot product
         dot_product = sum(a * b for a, b in zip(vec1, vec2))

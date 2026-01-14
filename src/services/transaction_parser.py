@@ -20,6 +20,9 @@ class TransactionParser:
     # Maximum description length for LLM categorization to prevent prompt injection
     MAX_DESCRIPTION_LENGTH = 500
     
+    # Maximum PDF text length for LLM parsing to prevent token overflow
+    MAX_PDF_TEXT_LENGTH = 10000
+    
     @staticmethod
     def _get_openai_client() -> Optional[OpenAI]:
         """Get or create OpenAI client.
@@ -365,8 +368,8 @@ If no transactions can be extracted, return: {"transactions": []}"""
 
         existing_categories_text = "None - create appropriate categories" if not existing_categories else ", ".join(existing_categories)
         
-        # Limit PDF text to prevent token overflow (keep first 10000 chars)
-        truncated_text = pdf_text[:10000] if len(pdf_text) > 10000 else pdf_text
+        # Limit PDF text to prevent token overflow
+        truncated_text = pdf_text[:TransactionParser.MAX_PDF_TEXT_LENGTH] if len(pdf_text) > TransactionParser.MAX_PDF_TEXT_LENGTH else pdf_text
         
         user_prompt = f"""Please extract all financial transactions from this bank statement:
 
