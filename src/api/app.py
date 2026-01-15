@@ -16,6 +16,7 @@ from src.models import Action, FinancialParameters, UserInput
 from src.workflow import create_assistant_graph, get_mcp_server
 from src.workflow.state import FinanceState
 from src.services import FileProcessor, FileValidationError, TransactionParser, RAGService
+from src.api.endpoints_narrative_rag import router as narrative_rag_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -83,6 +84,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include narrative RAG v2 router
+app.include_router(narrative_rag_router)
+logger.info("Narrative RAG v2 router included")
 
 # Initialize global RAG service for transaction semantic search
 rag_service = RAGService()
@@ -153,7 +158,10 @@ async def root():
             "search_transactions": "/api/transactions/search (POST) - RAG semantic search",
             "balance": "/api/balance (GET)",
             "upload_statement": "/statements/upload (POST)",
-            "financial_data": "/api/financial-data/{year} (GET)"
+            "financial_data": "/api/financial-data/{year} (GET)",
+            "v2_narrative_generate": "/api/v2/narratives/generate (POST) - Generate narrative summaries",
+            "v2_narrative_chat": "/api/v2/chat (POST) - RAG-based conversational query",
+            "v2_narrative_stats": "/api/v2/narratives/stats (GET) - Vector store statistics"
         }
     }
 
