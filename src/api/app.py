@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 
 from src.services.transaction_service import TransactionService
+from src.services.financial_data_service import FinancialDataService
 from src.database.init import init_database, close_database, get_db_session as _get_db_session
 
 # Configure logging
@@ -54,6 +55,15 @@ def get_transaction_service():
     finally:
         session.close()
 
+# Dependency to get FinancialDataService instance
+def get_financial_data_service():
+    session = _get_db_session()
+    service = FinancialDataService(session=session)
+    try:
+        yield service
+    finally:
+        session.close()
+
 # --- Pydantic Models ---
 
 class TransactionCreate(BaseModel):
@@ -80,6 +90,26 @@ class TransactionResponse(BaseModel):
 
 class BalanceResponse(BaseModel):
     balance: float
+
+# Financial Data Models
+class MonthlyDataResponse(BaseModel):
+    month: str
+    netWorth: float
+    expenses: float
+    income: float
+    net: float
+
+class AccountBreakdownResponse(BaseModel):
+    liquidity: float
+    investments: float
+    otherAssets: float
+
+class FinancialDataResponse(BaseModel):
+    year: int
+    currentNetWorth: float
+    netSavings: float
+    monthlyData: List[MonthlyDataResponse]
+    accountBreakdown: AccountBreakdownResponse
 
 # --- Endpoints ---
 
@@ -149,3 +179,20 @@ async def delete_transaction(
 async def get_balance(service: TransactionService = Depends(get_transaction_service)):
     """Get total balance."""
     return {"balance": service.get_balance()}
+
+@app.get("/api/financial-data/{year}", response_model=FinancialDataResponse)
+async def get_financial_data(
+    year: int,
+    service: FinancialDataService = Depends(get_financial_data_service)
+):
+    """Get aggregated financial data for a specific year.
+    
+    Returns monthly data for all 12 months, current net worth, net savings,
+    and account breakdown by category.
+    """
+    try:
+        data = service.get_financial_data_for_year(year)
+        return data
+    except Exception as e:
+        logger.error(f"Error getting financial data for year {year}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
