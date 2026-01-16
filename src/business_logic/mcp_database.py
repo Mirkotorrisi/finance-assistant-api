@@ -137,6 +137,33 @@ class FinanceMCPDatabase:
         
         return False
 
+    def update_transaction(self, transaction_id: int, updates: dict) -> Optional[dict]:
+        """Update a transaction by ID.
+        
+        Args:
+            transaction_id: ID of the transaction to update
+            updates: Dictionary of fields to update
+            
+        Returns:
+            Updated transaction as dictionary or None if not found
+        """
+        transaction = self.db.query(Transaction).filter(Transaction.id == transaction_id).first()
+        
+        if not transaction:
+            return None
+            
+        for key, value in updates.items():
+            if value is not None and hasattr(transaction, key):
+                # Handle special fields
+                if key == 'date' and isinstance(value, str):
+                    setattr(transaction, key, datetime.datetime.fromisoformat(value).date())
+                elif key != 'id':  # Prevent updating ID
+                    setattr(transaction, key, value)
+                    
+        self.db.commit()
+        self.db.refresh(transaction)
+        return transaction.to_dict()
+
     def get_balance(self) -> float:
         """Get the current balance (sum of all transactions).
         
@@ -157,6 +184,21 @@ class FinanceMCPDatabase:
         """
         added_transactions = []
         
+        # 1. Collect all unique categories
+        categories = {t.get("category") for t in transactions if t.get("category")}
+        
+        # 2. Ensure all categories exist (bulk check/create)
+        # We do this separately to avoid committing inside the transaction loop
+        for category_name in categories:
+            self._ensure_category_exists(category_name)
+            
+        # Re-query DB ensures we see them if we just committed them in _ensure_category_exists? 
+        # Actually _ensure_category_exists commits.
+        # But wait, if _ensure_category_exists commits, it commits the current session. 
+        # If we have pending transactions, they get committed.
+        # So we must do category creation BEFORE creating any Transaction objects in the session.
+        
+        # 3. Add transactions
         for transaction_data in transactions:
             date_str = transaction_data.get("date")
             if date_str:
@@ -174,9 +216,6 @@ class FinanceMCPDatabase:
             
             self.db.add(new_transaction)
             added_transactions.append(new_transaction)
-            
-            # Ensure category exists
-            self._ensure_category_exists(transaction_data["category"])
         
         self.db.commit()
         
