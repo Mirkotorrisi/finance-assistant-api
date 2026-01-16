@@ -15,9 +15,11 @@ MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 # Account type categorization
+# Note: Only positive balances are included in the breakdown
+# Loans can be assets if they represent money lent to others (positive balance)
 LIQUIDITY_TYPES = {"checking", "savings", "cash"}
 INVESTMENT_TYPES = {"investment", "brokerage", "retirement"}
-OTHER_ASSET_TYPES = {"other", "asset", "loan"}
+OTHER_ASSET_TYPES = {"other", "asset", "loan"}  # Includes loans with positive balance
 
 
 class FinancialDataService:
@@ -133,6 +135,8 @@ class FinancialDataService:
                 MonthlyAccountSnapshot.month.desc()
             ).first()
             
+            # Only include accounts with positive balances in the breakdown
+            # Zero and negative balances are excluded as they don't contribute to net worth
             if recent_snapshot and recent_snapshot.ending_balance > 0:
                 balance = recent_snapshot.ending_balance
                 account_type = account.type.lower()
