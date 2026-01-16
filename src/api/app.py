@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-from src.business_logic.mcp_database import FinanceMCPDatabase
+
+from src.services.transaction_service import TransactionService
 from src.database.init import init_database, close_database, get_db_session as _get_db_session
 
 # Configure logging
@@ -44,37 +45,14 @@ app.add_middleware(
 )
 
 
-# Dependency to get FinanceMCPDatabase instance
-def get_mcp_db():
+# Dependency to get TransactionService instance
+def get_transaction_service():
     session = _get_db_session()
-    db = FinanceMCPDatabase(db_session=session)
+    service = TransactionService(session=session)
     try:
-        yield db
+        yield service
     finally:
-        # We don't close the session here because FinanceMCPDatabase might not own it 
-        # based on my previous check of the code, but actually _get_db_session returns a new session usually.
-        # Let's check if FinanceMCPDatabase closes it.
-        # It has a close() method.
-        # But if we pass a session, owns_session is False.
-        # So we should close the session manually or let FastAPI dependency handle it if it was a generator yielding session.
-        # Simplest is to let FinanceMCPDatabase create its own session or handle it here.
-        # The existing code had `get_mcp_server` which likely did something similar.
-        # Let's rely on FinanceMCPDatabase default init if possible, but that creates a new session every time.
-        # Better:
-        pass
-    # Actually, FinanceMCPDatabase takes an optional session.
-    # If we pass one, it sets owns_session=False.
-    # If we don't, it calls get_db_session().
-    # Let's just instantiate it.
-    # db = FinanceMCPDatabase() 
-    # try: yield db; finally: db.close() 
-
-def get_db():
-    db = FinanceMCPDatabase()
-    try:
-        yield db
-    finally:
-        db.close()
+        session.close()
 
 # --- Pydantic Models ---
 
@@ -115,18 +93,18 @@ async def list_transactions(
     category: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    db: FinanceMCPDatabase = Depends(get_db)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """List transactions with optional filters."""
-    return db.list_transactions(category, start_date, end_date)
+    return service.list_transactions(category, start_date, end_date)
 
 @app.post("/api/transactions", response_model=TransactionResponse)
 async def create_transaction(
     transaction: TransactionCreate,
-    db: FinanceMCPDatabase = Depends(get_db)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Create a new transaction."""
-    return db.add_transaction(
+    return service.add_transaction(
         amount=transaction.amount,
         category=transaction.category,
         description=transaction.description,
@@ -137,10 +115,10 @@ async def create_transaction(
 @app.post("/api/transactions/bulk", response_model=List[TransactionResponse])
 async def create_transactions_bulk(
     transactions: List[TransactionCreate],
-    db: FinanceMCPDatabase = Depends(get_db)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Create multiple transactions in bulk."""
-    return db.add_transactions_bulk(
+    return service.add_transactions_bulk(
         [t.model_dump() for t in transactions]
     )
 
@@ -148,10 +126,10 @@ async def create_transactions_bulk(
 async def update_transaction(
     transaction_id: int,
     updates: TransactionUpdate,
-    db: FinanceMCPDatabase = Depends(get_db)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Update an existing transaction."""
-    updated = db.update_transaction(transaction_id, updates.model_dump(exclude_unset=True))
+    updated = service.update_transaction(transaction_id, updates.model_dump(exclude_unset=True))
     if not updated:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return updated
@@ -159,15 +137,15 @@ async def update_transaction(
 @app.delete("/api/transactions/{transaction_id}")
 async def delete_transaction(
     transaction_id: int,
-    db: FinanceMCPDatabase = Depends(get_db)
+    service: TransactionService = Depends(get_transaction_service)
 ):
     """Delete a transaction."""
-    success = db.delete_transaction(transaction_id)
+    success = service.delete_transaction(transaction_id)
     if not success:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {"message": "Transaction deleted successfully"}
 
 @app.get("/api/balance", response_model=BalanceResponse)
-async def get_balance(db: FinanceMCPDatabase = Depends(get_db)):
+async def get_balance(service: TransactionService = Depends(get_transaction_service)):
     """Get total balance."""
-    return {"balance": db.get_balance()}
+    return {"balance": service.get_balance()}

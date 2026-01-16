@@ -19,6 +19,7 @@ alembic = "*"
 sqlalchemy = "*"
 psycopg2-binary = "*"
 fastapi = "*"
+mcp = "*"
 
 [dev-packages]
 
