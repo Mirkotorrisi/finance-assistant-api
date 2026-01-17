@@ -22,6 +22,7 @@ class Account(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    current_balance = Column(Float, nullable=False, default=0.0)
     
     # Relationships
     snapshots = relationship("MonthlyAccountSnapshot", back_populates="account", cascade="all, delete-orphan")
@@ -41,7 +42,8 @@ class Account(Base):
             "name": self.name,
             "type": self.type,
             "currency": self.currency,
-            "is_active": self.is_active
+            "is_active": self.is_active,
+            "current_balance": self.current_balance
         }
 
 
@@ -67,6 +69,7 @@ class MonthlyAccountSnapshot(Base):
     total_expense = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
     
     # Unique constraint: one snapshot per (account_id, year, month)
     __table_args__ = (

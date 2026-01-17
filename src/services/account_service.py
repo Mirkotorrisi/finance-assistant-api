@@ -13,8 +13,8 @@ class AccountService:
 
     # --- Account Operations ---
 
-    def create_account(self, name: str, account_type: str, currency: str = "EUR", is_active: bool = True) -> Dict[str, Any]:
-        account = Account(name=name, type=account_type, currency=currency, is_active=is_active)
+    def create_account(self, name: str, account_type: str, currency: str = "EUR", is_active: bool = True, current_balance: float = 0.0) -> Dict[str, Any]:
+        account = Account(name=name, type=account_type, currency=currency, is_active=is_active, current_balance=current_balance)
         created = self.account_repo.create(account)
         return created.to_dict()
 
