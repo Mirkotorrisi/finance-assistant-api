@@ -15,11 +15,11 @@ pypdf2 = "*"
 openpyxl = "*"
 pandas = "*"
 python-multipart = ">=0.0.18"
-alembic = "*"
 sqlalchemy = "*"
 psycopg2-binary = "*"
 fastapi = "*"
 mcp = "*"
+alembic = "*"
 
 [dev-packages]
 
