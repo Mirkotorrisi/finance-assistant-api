@@ -121,6 +121,7 @@ class AccountResponse(BaseModel):
     type: str
     currency: str
     is_active: bool
+    current_balance: float
 
 class AccountBalanceResponse(BaseModel):
     account_id: int
