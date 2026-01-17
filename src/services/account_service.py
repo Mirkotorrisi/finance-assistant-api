@@ -26,6 +26,22 @@ class AccountService:
         accounts = self.account_repo.list_all(active_only)
         return [acc.to_dict() for acc in accounts]
 
+    def update_account(self, account_id: int, updates: dict) -> Optional[Dict[str, Any]]:
+        """Update an account."""
+        updated = self.account_repo.update(account_id, updates)
+        return updated.to_dict() if updated else None
+
+    def delete_account(self, account_id: int) -> bool:
+        """Delete (deactivate) an account."""
+        return self.account_repo.delete(account_id)
+
+    def get_account_balance(self, account_id: int) -> float:
+        """Get current balance for an account from latest snapshot."""
+        snapshots = self.snapshot_repo.get_trend(account_id, limit=1)
+        if snapshots:
+            return snapshots[0].ending_balance
+        return 0.0
+
     # --- Snapshot Operations ---
 
     def create_snapshot(
