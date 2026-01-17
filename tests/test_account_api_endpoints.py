@@ -8,8 +8,6 @@ sys.path.append(os.getcwd())
 
 from src.api.app import app
 
-client = TestClient(app)
-
 
 def test_account_api_endpoints():
     """Test Account CRUD API endpoints."""

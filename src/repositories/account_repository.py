@@ -27,8 +27,11 @@ class AccountRepository:
         if not account:
             return None
         
+        # Whitelist of allowed fields to prevent modification of sensitive fields
+        allowed_fields = {'name', 'type', 'is_active', 'currency'}
+        
         for key, value in updates.items():
-            if hasattr(account, key):
+            if key in allowed_fields and hasattr(account, key):
                 setattr(account, key, value)
         
         self.session.commit()
