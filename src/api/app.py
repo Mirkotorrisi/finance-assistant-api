@@ -323,7 +323,8 @@ async def create_account(
         name=account.name,
         account_type=account.account_type,
         currency=account.currency,
-        is_active=account.is_active
+        is_active=account.is_active,
+        current_balance=account.current_balance
     )
 
 @app.put("/api/accounts/{account_id}", response_model=AccountResponse)
