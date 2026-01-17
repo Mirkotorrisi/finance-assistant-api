@@ -108,6 +108,7 @@ class AccountCreate(BaseModel):
     account_type: str
     currency: Optional[str] = "EUR"
     is_active: Optional[bool] = True
+    current_balance: Optional[float] = 0.0
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
