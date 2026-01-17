@@ -37,7 +37,7 @@ class AccountService:
 
     def get_account_balance(self, account_id: int) -> float:
         """Get current balance for an account from latest snapshot."""
-        snapshots = self.snapshot_repo.get_trend(account_id, num_months=1)
+        snapshots = self.snapshot_repo.get_trend(account_id, limit=1)
         if snapshots:
             return snapshots[0].ending_balance
         return 0.0
