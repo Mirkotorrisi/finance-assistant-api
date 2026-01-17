@@ -8,8 +8,10 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 
+
 from src.services.transaction_service import TransactionService
 from src.services.financial_data_service import FinancialDataService
+from src.services.account_service import AccountService
 from src.database.init import init_database, close_database, get_db_session as _get_db_session
 
 # Configure logging
@@ -59,6 +61,15 @@ def get_transaction_service():
 def get_financial_data_service():
     session = _get_db_session()
     service = FinancialDataService(session=session)
+    try:
+        yield service
+    finally:
+        session.close()
+
+# Dependency to get AccountService instance
+def get_account_service():
+    session = _get_db_session()
+    service = AccountService(session=session)
     try:
         yield service
     finally:
@@ -188,3 +199,71 @@ async def get_financial_data(
     """Get aggregated financial data for a specific year."""
     data = service.get_financial_data(year)
     return data
+
+@app.post("/api/snapshots/populate")
+async def populate_snapshots(
+    service: AccountService = Depends(get_account_service)
+):
+    """Populate monthly snapshots from existing transaction data for all accounts.
+    
+    This endpoint:
+    1. Finds all active accounts
+    2. Groups transactions by year/month for each account
+    3. Calculates monthly aggregates (income, expenses, balances)
+    4. Creates or updates MonthlyAccountSnapshot records
+    """
+    from sqlalchemy import func
+    from src.database.models import Transaction
+    
+    results = []
+    accounts = service.list_accounts(active_only=True)
+    
+    for account in accounts:
+        account_id = account['id']
+        
+        # Get all unique year/month combinations for this account's transactions
+        periods = service.session.query(
+            func.extract('year', Transaction.date).label('year'),
+            func.extract('month', Transaction.date).label('month')
+        ).filter(
+            Transaction.account_id == account_id
+        ).distinct().order_by('year', 'month').all()
+        
+        if not periods:
+            continue
+        
+        running_balance = 0.0
+        
+        for year, month in periods:
+            year = int(year)
+            month = int(month)
+            
+            try:
+                snapshot = service.populate_snapshot_from_transactions(
+                    account_id=account_id,
+                    year=year,
+                    month=month,
+                    starting_balance=running_balance,
+                    overwrite=True
+                )
+                running_balance = snapshot['ending_balance']
+                results.append({
+                    "account_id": account_id,
+                    "account_name": account['name'],
+                    "year": year,
+                    "month": month,
+                    "status": "created/updated"
+                })
+            except Exception as e:
+                results.append({
+                    "account_id": account_id,
+                    "account_name": account['name'],
+                    "year": year,
+                    "month": month,
+                    "status": f"error: {str(e)}"
+                })
+    
+    return {
+        "message": f"Processed {len(results)} snapshots",
+        "results": results
+    }
