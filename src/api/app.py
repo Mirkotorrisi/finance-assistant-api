@@ -102,6 +102,29 @@ class TransactionResponse(BaseModel):
 class BalanceResponse(BaseModel):
     balance: float
 
+# Account models
+class AccountCreate(BaseModel):
+    name: str
+    account_type: str
+    currency: Optional[str] = "EUR"
+    is_active: Optional[bool] = True
+
+class AccountUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class AccountResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    currency: str
+    is_active: bool
+
+class AccountBalanceResponse(BaseModel):
+    account_id: int
+    balance: float
+
 # Financial data response models
 class MonthlyDataResponse(BaseModel):
     month: str
@@ -267,3 +290,74 @@ async def populate_snapshots(
         "message": f"Processed {len(results)} snapshots",
         "results": results
     }
+
+# --- Account Endpoints ---
+
+@app.get("/api/accounts", response_model=List[AccountResponse])
+async def list_accounts(
+    active_only: bool = True,
+    service: AccountService = Depends(get_account_service)
+):
+    """List all accounts."""
+    accounts = service.list_accounts(active_only=active_only)
+    return accounts
+
+@app.get("/api/accounts/{account_id}", response_model=AccountResponse)
+async def get_account(
+    account_id: int,
+    service: AccountService = Depends(get_account_service)
+):
+    """Get a single account by ID."""
+    account = service.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+@app.post("/api/accounts", response_model=AccountResponse)
+async def create_account(
+    account: AccountCreate,
+    service: AccountService = Depends(get_account_service)
+):
+    """Create a new account."""
+    return service.create_account(
+        name=account.name,
+        account_type=account.account_type,
+        currency=account.currency,
+        is_active=account.is_active
+    )
+
+@app.put("/api/accounts/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: int,
+    updates: AccountUpdate,
+    service: AccountService = Depends(get_account_service)
+):
+    """Update an existing account."""
+    updated = service.update_account(account_id, updates.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return updated
+
+@app.delete("/api/accounts/{account_id}")
+async def delete_account(
+    account_id: int,
+    service: AccountService = Depends(get_account_service)
+):
+    """Delete (deactivate) an account."""
+    success = service.delete_account(account_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"message": "Account deleted successfully"}
+
+@app.get("/api/accounts/{account_id}/balance", response_model=AccountBalanceResponse)
+async def get_account_balance(
+    account_id: int,
+    service: AccountService = Depends(get_account_service)
+):
+    """Get current balance for an account."""
+    account = service.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    balance = service.get_account_balance(account_id)
+    return {"account_id": account_id, "balance": balance}

@@ -20,3 +20,27 @@ class AccountRepository:
         if active_only:
             query = query.filter(Account.is_active == True)
         return query.order_by(Account.name).all()
+
+    def update(self, account_id: int, updates: dict) -> Optional[Account]:
+        """Update an account with partial updates."""
+        account = self.get_by_id(account_id)
+        if not account:
+            return None
+        
+        for key, value in updates.items():
+            if hasattr(account, key):
+                setattr(account, key, value)
+        
+        self.session.commit()
+        self.session.refresh(account)
+        return account
+
+    def delete(self, account_id: int) -> bool:
+        """Soft delete an account by setting is_active to False."""
+        account = self.get_by_id(account_id)
+        if not account:
+            return False
+        
+        account.is_active = False
+        self.session.commit()
+        return True
