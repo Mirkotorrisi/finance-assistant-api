@@ -2,9 +2,9 @@
 
 import pytest
 from datetime import date
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock
 from src.services.financial_summary_service import FinancialSummaryService
-from src.database.models import Transaction, Account
+from src.database.models import MonthlyAccountSnapshot, Account, Transaction
 
 
 @pytest.fixture
@@ -14,258 +14,288 @@ def mock_session():
 
 
 @pytest.fixture
-def mock_account_service():
-    """Create a mock AccountService."""
-    return MagicMock()
-
-
-@pytest.fixture
-def financial_summary_service(mock_session, mock_account_service):
-    """Create a FinancialSummaryService instance with mocked dependencies."""
-    with patch('src.services.financial_summary_service.AccountService', return_value=mock_account_service):
-        service = FinancialSummaryService(mock_session)
-        service.account_service = mock_account_service
-        return service
+def financial_summary_service(mock_session):
+    """Create a FinancialSummaryService instance with mocked database."""
+    return FinancialSummaryService(session=mock_session)
 
 
 class TestGetMonthlySummary:
     """Tests for get_monthly_summary method."""
     
-    def test_get_monthly_summary_success(self, financial_summary_service, mock_session, mock_account_service):
-        """Test successful monthly summary generation."""
-        # Mock transactions
-        mock_transactions = [
-            Mock(amount=1000.0, category="Salary", date=date(2026, 2, 1)),
-            Mock(amount=-200.0, category="Food", date=date(2026, 2, 5)),
-            Mock(amount=-150.0, category="Transport", date=date(2026, 2, 10)),
-            Mock(amount=-100.0, category="Food", date=date(2026, 2, 15)),
-        ]
+    def test_valid_month_format(self, financial_summary_service, mock_session):
+        """Test with valid month format."""
+        # Mock query results
+        mock_result = Mock()
+        mock_result.income = 5000.0
+        mock_result.expenses = 3000.0
         
-        # Mock query chain properly
-        mock_filter1 = Mock()
-        mock_filter2 = Mock()
-        mock_filter2.all.return_value = mock_transactions
-        mock_filter1.filter.return_value = mock_filter2
-        
-        mock_query = Mock()
-        mock_query.filter.return_value = mock_filter1
+        mock_query = MagicMock()
+        mock_query.filter.return_value.first.return_value = mock_result
         mock_session.query.return_value = mock_query
         
-        # Mock accounts
-        mock_account_service.list_accounts.return_value = [
-            {"id": 1, "name": "Bank Account", "currency": "EUR"}
-        ]
-        mock_account_service.get_account_balance.return_value = 5000.0
+        # Mock top categories query
+        financial_summary_service._get_top_categories = MagicMock(return_value=[
+            {"category": "Groceries", "amount": 500.0, "count": 10},
+            {"category": "Rent", "amount": 1200.0, "count": 1}
+        ])
         
-        # Call method
-        result = financial_summary_service.get_monthly_summary("2026-02")
+        result = financial_summary_service.get_monthly_summary("2024-01")
         
-        # Assertions
-        assert result["month"] == "2026-02"
-        assert result["income"] == 1000.0
-        assert result["expenses"] == 450.0  # 200 + 150 + 100
-        assert result["net"] == 550.0  # 1000 - 450
+        assert result["month"] == "2024-01"
+        assert result["income"] == 5000.0
+        assert result["expenses"] == 3000.0
+        assert result["net"] == 2000.0
         assert len(result["top_categories"]) == 2
-        assert result["top_categories"][0]["name"] == "Food"
-        assert result["top_categories"][0]["amount"] == 300.0
-        assert result["top_categories"][0]["count"] == 2
-        assert len(result["accounts"]) == 1
-        assert result["accounts"][0]["balance"] == 5000.0
     
-    def test_get_monthly_summary_invalid_format(self, financial_summary_service):
-        """Test monthly summary with invalid month format."""
-        with pytest.raises(ValueError, match="Invalid month number"):
-            financial_summary_service.get_monthly_summary("2026-13")
-    
-    def test_get_monthly_summary_no_transactions(self, financial_summary_service, mock_session, mock_account_service):
-        """Test monthly summary with no transactions."""
-        # Mock empty transactions properly
-        mock_filter1 = Mock()
-        mock_filter2 = Mock()
-        mock_filter2.all.return_value = []
-        mock_filter1.filter.return_value = mock_filter2
+    def test_invalid_month_format(self, financial_summary_service):
+        """Test with invalid month format."""
+        with pytest.raises(ValueError, match="Invalid month format"):
+            financial_summary_service.get_monthly_summary("2024/01")
         
-        mock_query = Mock()
-        mock_query.filter.return_value = mock_filter1
+        with pytest.raises(ValueError, match="Invalid month format"):
+            financial_summary_service.get_monthly_summary("202401")
+        
+        with pytest.raises(ValueError, match="Invalid month format"):
+            financial_summary_service.get_monthly_summary("invalid")
+    
+    def test_no_data_for_month(self, financial_summary_service, mock_session):
+        """Test when no data exists for the month."""
+        mock_result = Mock()
+        mock_result.income = None
+        mock_result.expenses = None
+        
+        mock_query = MagicMock()
+        mock_query.filter.return_value.first.return_value = mock_result
         mock_session.query.return_value = mock_query
         
-        # Mock accounts
-        mock_account_service.list_accounts.return_value = []
+        financial_summary_service._get_top_categories = MagicMock(return_value=[])
         
-        # Call method
-        result = financial_summary_service.get_monthly_summary("2026-02")
+        result = financial_summary_service.get_monthly_summary("2024-01")
         
-        # Assertions
         assert result["income"] == 0.0
         assert result["expenses"] == 0.0
         assert result["net"] == 0.0
-        assert len(result["top_categories"]) == 0
-        assert len(result["accounts"]) == 0
+        assert result["top_categories"] == []
 
 
 class TestGetSpendingDistribution:
     """Tests for get_spending_distribution method."""
     
-    def test_get_spending_distribution_by_category(self, financial_summary_service, mock_session):
-        """Test spending distribution grouped by category."""
+    def test_valid_date_range_category_grouping(self, financial_summary_service, mock_session):
+        """Test with valid date range and category grouping."""
         # Mock transactions
-        mock_transactions = [
-            Mock(amount=-200.0, category="Food", account_id=1),
-            Mock(amount=-150.0, category="Transport", account_id=1),
-            Mock(amount=-100.0, category="Food", account_id=2),
-        ]
+        txn1 = Mock()
+        txn1.amount = -100.0
+        txn1.category = "Groceries"
+        txn1.account_id = 1
         
-        # Mock query chain properly
-        mock_filter1 = Mock()
-        mock_filter2 = Mock()
-        mock_filter3 = Mock()
-        mock_filter3.all.return_value = mock_transactions
-        mock_filter2.filter.return_value = mock_filter3
-        mock_filter1.filter.return_value = mock_filter2
+        txn2 = Mock()
+        txn2.amount = -200.0
+        txn2.category = "Groceries"
+        txn2.account_id = 1
         
-        mock_query = Mock()
-        mock_query.filter.return_value = mock_filter1
+        txn3 = Mock()
+        txn3.amount = -150.0
+        txn3.category = "Transportation"
+        txn3.account_id = 2
+        
+        mock_query = MagicMock()
+        mock_query.filter.return_value.all.return_value = [txn1, txn2, txn3]
         mock_session.query.return_value = mock_query
         
-        # Call method
-        result = financial_summary_service.get_spending_distribution("2026-01-01", "2026-01-31", "category")
+        result = financial_summary_service.get_spending_distribution(
+            "2024-01-01", "2024-01-31", "category"
+        )
         
-        # Assertions
-        assert len(result) == 2
-        assert result[0]["name"] == "Food"
-        assert result[0]["amount"] == 300.0
-        assert result[0]["percentage"] == 66.67
-        assert result[0]["count"] == 2
-        assert result[1]["name"] == "Transport"
-        assert result[1]["amount"] == 150.0
-        assert result[1]["percentage"] == 33.33
-        assert result[1]["count"] == 1
+        assert result["start_date"] == "2024-01-01"
+        assert result["end_date"] == "2024-01-31"
+        assert result["group_by"] == "category"
+        assert result["total_amount"] == 450.0
+        assert len(result["distribution"]) == 2
+        
+        # Verify Groceries is first (highest amount)
+        assert result["distribution"][0]["name"] == "Groceries"
+        assert result["distribution"][0]["amount"] == 300.0
+        assert result["distribution"][0]["count"] == 2
+        assert round(result["distribution"][0]["percent"], 2) == 66.67
+        
+        # Verify Transportation is second
+        assert result["distribution"][1]["name"] == "Transportation"
+        assert result["distribution"][1]["amount"] == 150.0
+        assert result["distribution"][1]["count"] == 1
+        assert round(result["distribution"][1]["percent"], 2) == 33.33
     
-    def test_get_spending_distribution_by_account(self, financial_summary_service, mock_session, mock_account_service):
-        """Test spending distribution grouped by account."""
-        # Mock transactions
-        mock_transactions = [
-            Mock(amount=-200.0, category="Food", account_id=1),
-            Mock(amount=-150.0, category="Transport", account_id=1),
-            Mock(amount=-100.0, category="Food", account_id=2),
+    def test_valid_date_range_account_grouping(self, financial_summary_service, mock_session):
+        """Test with account grouping."""
+        txn1 = Mock()
+        txn1.amount = -100.0
+        txn1.category = "Groceries"
+        txn1.account_id = 1
+        
+        txn2 = Mock()
+        txn2.amount = -200.0
+        txn2.category = "Transportation"
+        txn2.account_id = 2
+        
+        # Mock the query to return tuples of (transaction, account_name)
+        mock_query = MagicMock()
+        mock_query.outerjoin.return_value.filter.return_value.all.return_value = [
+            (txn1, "Checking Account"),
+            (txn2, "Credit Card")
         ]
-        
-        # Mock query chain properly
-        mock_filter1 = Mock()
-        mock_filter2 = Mock()
-        mock_filter3 = Mock()
-        mock_filter3.all.return_value = mock_transactions
-        mock_filter2.filter.return_value = mock_filter3
-        mock_filter1.filter.return_value = mock_filter2
-        
-        mock_query = Mock()
-        mock_query.filter.return_value = mock_filter1
         mock_session.query.return_value = mock_query
         
-        # Mock accounts
-        mock_account_service.list_accounts.return_value = [
-            {"id": 1, "name": "Checking"},
-            {"id": 2, "name": "Savings"}
-        ]
+        result = financial_summary_service.get_spending_distribution(
+            "2024-01-01", "2024-01-31", "account"
+        )
         
-        # Call method
-        result = financial_summary_service.get_spending_distribution("2026-01-01", "2026-01-31", "account")
-        
-        # Assertions
-        assert len(result) == 2
-        assert result[0]["name"] == "Checking"
-        assert result[0]["amount"] == 350.0
-        assert result[0]["percentage"] == 77.78
-        assert result[0]["count"] == 2
+        assert result["group_by"] == "account"
+        assert len(result["distribution"]) == 2
+        # Verify account names are used instead of IDs
+        names = [d["name"] for d in result["distribution"]]
+        assert "Checking Account" in names
+        assert "Credit Card" in names
     
-    def test_get_spending_distribution_invalid_group_by(self, financial_summary_service):
-        """Test spending distribution with invalid group_by parameter."""
-        with pytest.raises(ValueError, match="Invalid group_by parameter"):
-            financial_summary_service.get_spending_distribution("2026-01-01", "2026-01-31", "invalid")
-    
-    def test_get_spending_distribution_invalid_date_format(self, financial_summary_service):
-        """Test spending distribution with invalid date format."""
+    def test_invalid_date_format(self, financial_summary_service):
+        """Test with invalid date format."""
         with pytest.raises(ValueError, match="Invalid date format"):
-            financial_summary_service.get_spending_distribution("2026-01", "2026-01-31", "category")
-    
-    def test_get_spending_distribution_no_transactions(self, financial_summary_service, mock_session):
-        """Test spending distribution with no transactions."""
-        # Mock empty transactions properly
-        mock_filter1 = Mock()
-        mock_filter2 = Mock()
-        mock_filter3 = Mock()
-        mock_filter3.all.return_value = []
-        mock_filter2.filter.return_value = mock_filter3
-        mock_filter1.filter.return_value = mock_filter2
+            financial_summary_service.get_spending_distribution(
+                "2024/01/01", "2024-01-31", "category"
+            )
         
-        mock_query = Mock()
-        mock_query.filter.return_value = mock_filter1
+        with pytest.raises(ValueError, match="Invalid date format"):
+            financial_summary_service.get_spending_distribution(
+                "2024-01-01", "invalid", "category"
+            )
+    
+    def test_invalid_group_by(self, financial_summary_service):
+        """Test with invalid group_by parameter."""
+        with pytest.raises(ValueError, match="group_by must be"):
+            financial_summary_service.get_spending_distribution(
+                "2024-01-01", "2024-01-31", "invalid"
+            )
+    
+    def test_no_transactions(self, financial_summary_service, mock_session):
+        """Test when no transactions exist in the date range."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value.all.return_value = []
         mock_session.query.return_value = mock_query
         
-        # Call method
-        result = financial_summary_service.get_spending_distribution("2026-01-01", "2026-01-31", "category")
+        result = financial_summary_service.get_spending_distribution(
+            "2024-01-01", "2024-01-31", "category"
+        )
         
-        # Assertions
-        assert len(result) == 0
+        assert result["total_amount"] == 0.0
+        assert result["distribution"] == []
 
 
 class TestGetAccountBreakdown:
     """Tests for get_account_breakdown method."""
     
-    def test_get_account_breakdown_success(self, financial_summary_service, mock_account_service):
-        """Test successful account breakdown generation."""
-        # Mock accounts
-        mock_account_service.list_accounts.return_value = [
-            {"id": 1, "name": "Checking", "currency": "EUR"},
-            {"id": 2, "name": "Savings", "currency": "EUR"},
-            {"id": 3, "name": "Investment", "currency": "USD"}
+    def test_with_multiple_accounts(self, financial_summary_service, mock_session):
+        """Test with multiple accounts of different types."""
+        # Mock snapshots
+        snap1 = Mock()
+        snap1.account_id = 1
+        snap1.ending_balance = 5000.0
+        snap1.name = "Checking Account"
+        snap1.type = "checking"
+        snap1.currency = "EUR"
+        
+        snap2 = Mock()
+        snap2.account_id = 2
+        snap2.ending_balance = 10000.0
+        snap2.name = "Investment Account"
+        snap2.type = "investment"
+        snap2.currency = "EUR"
+        
+        snap3 = Mock()
+        snap3.account_id = 3
+        snap3.ending_balance = 2000.0
+        snap3.name = "Savings Account"
+        snap3.type = "savings"
+        snap3.currency = "EUR"
+        
+        mock_query = MagicMock()
+        mock_query.join.return_value.join.return_value.filter.return_value.all.return_value = [
+            snap1, snap2, snap3
         ]
+        mock_session.query.return_value = mock_query
         
-        # Mock balances
-        def mock_get_balance(account_id):
-            balances = {1: 5000.0, 2: 3000.0, 3: 2000.0}
-            return balances.get(account_id, 0.0)
-        
-        mock_account_service.get_account_balance.side_effect = mock_get_balance
-        
-        # Call method
         result = financial_summary_service.get_account_breakdown()
         
-        # Assertions
-        assert len(result) == 3
-        assert result[0]["account_name"] == "Checking"
-        assert result[0]["balance"] == 5000.0
-        assert result[0]["percentage"] == 50.0
-        assert result[1]["account_name"] == "Savings"
-        assert result[1]["balance"] == 3000.0
-        assert result[1]["percentage"] == 30.0
-        assert result[2]["account_name"] == "Investment"
-        assert result[2]["balance"] == 2000.0
-        assert result[2]["percentage"] == 20.0
-    
-    def test_get_account_breakdown_no_accounts(self, financial_summary_service, mock_account_service):
-        """Test account breakdown with no accounts."""
-        # Mock empty accounts
-        mock_account_service.list_accounts.return_value = []
+        assert result["total_balance"] == 17000.0
+        assert result["by_type"]["liquidity"]["amount"] == 7000.0
+        assert result["by_type"]["investments"]["amount"] == 10000.0
+        assert result["by_type"]["other"]["amount"] == 0.0
         
-        # Call method
+        # Verify percentages
+        assert round(result["by_type"]["liquidity"]["percent"], 2) == 41.18
+        assert round(result["by_type"]["investments"]["percent"], 2) == 58.82
+        
+        # Verify accounts list
+        assert len(result["accounts"]) == 3
+        
+        # First account should be Investment (highest balance)
+        assert result["accounts"][0]["name"] == "Investment Account"
+        assert result["accounts"][0]["balance"] == 10000.0
+        assert result["accounts"][0]["category"] == "investments"
+    
+    def test_no_accounts(self, financial_summary_service, mock_session):
+        """Test when no accounts exist."""
+        mock_query = MagicMock()
+        mock_query.join.return_value.join.return_value.filter.return_value.all.return_value = []
+        mock_session.query.return_value = mock_query
+        
         result = financial_summary_service.get_account_breakdown()
         
-        # Assertions
-        assert len(result) == 0
+        assert result["total_balance"] == 0.0
+        assert result["by_type"]["liquidity"]["amount"] == 0.0
+        assert result["by_type"]["investments"]["amount"] == 0.0
+        assert result["by_type"]["other"]["amount"] == 0.0
+        assert result["accounts"] == []
+
+
+class TestGetTopCategories:
+    """Tests for _get_top_categories helper method."""
     
-    def test_get_account_breakdown_zero_balances(self, financial_summary_service, mock_account_service):
-        """Test account breakdown with zero balances."""
-        # Mock accounts
-        mock_account_service.list_accounts.return_value = [
-            {"id": 1, "name": "Checking", "currency": "EUR"}
+    def test_get_top_categories(self, financial_summary_service, mock_session):
+        """Test getting top categories."""
+        mock_row1 = Mock()
+        mock_row1.category = "Groceries"
+        mock_row1.total_amount = 500.0
+        mock_row1.count = 10
+        
+        mock_row2 = Mock()
+        mock_row2.category = "Rent"
+        mock_row2.total_amount = 1200.0
+        mock_row2.count = 1
+        
+        mock_query = MagicMock()
+        mock_query.filter.return_value.group_by.return_value.order_by.return_value.limit.return_value.all.return_value = [
+            mock_row1, mock_row2
         ]
+        mock_session.query.return_value = mock_query
         
-        # Mock zero balance
-        mock_account_service.get_account_balance.return_value = 0.0
+        result = financial_summary_service._get_top_categories(2024, 1, limit=5)
         
-        # Call method
-        result = financial_summary_service.get_account_breakdown()
-        
-        # Assertions
-        assert len(result) == 0  # Accounts with zero balance are excluded
+        assert len(result) == 2
+        assert result[0]["category"] == "Groceries"
+        assert result[0]["amount"] == 500.0
+        assert result[0]["count"] == 10
+
+
+class TestAccountTypeConstants:
+    """Test service constants."""
+    
+    def test_liquidity_types(self):
+        """Test liquidity account types."""
+        assert "checking" in FinancialSummaryService.LIQUIDITY_TYPES
+        assert "savings" in FinancialSummaryService.LIQUIDITY_TYPES
+        assert "cash" in FinancialSummaryService.LIQUIDITY_TYPES
+    
+    def test_investment_types(self):
+        """Test investment account types."""
+        assert "investment" in FinancialSummaryService.INVESTMENT_TYPES
+        assert "brokerage" in FinancialSummaryService.INVESTMENT_TYPES
+        assert "retirement" in FinancialSummaryService.INVESTMENT_TYPES

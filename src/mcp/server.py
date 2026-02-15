@@ -158,15 +158,16 @@ def get_balance_trend(num_months: int = 12) -> str:
 
 @mcp.tool()
 def get_monthly_summary(month: str) -> str:
-    """Get aggregated monthly financial summary for UI rendering.
+    """Get monthly financial summary including income, expenses, net, and top categories.
     
-    Returns monthly income, expenses, net, top spending categories, and account balances.
+    This tool provides chart-ready data for SummaryTable components in the generative UI.
+    Returns structured JSON with income, expenses, net income, and top spending categories.
     
     Args:
-        month: Month in YYYY-MM format (e.g., "2026-02")
+        month: Month in format "YYYY-MM" (e.g., "2024-01")
         
     Returns:
-        JSON string with monthly summary data
+        JSON string containing monthly summary data
     """
     service, session = get_financial_summary_service()
     try:
@@ -179,17 +180,18 @@ def get_monthly_summary(month: str) -> str:
 
 @mcp.tool()
 def get_spending_distribution(start_date: str, end_date: str, group_by: str = "category") -> str:
-    """Get spending distribution breakdown for charts.
+    """Get spending distribution breakdown for a date range.
     
-    Returns spending breakdown grouped by category or account for visualization.
+    This tool provides chart-ready data for bubble/pie chart components in the generative UI.
+    Returns category or account breakdown with amounts, percentages, and transaction counts.
     
     Args:
-        start_date: Start date in YYYY-MM-DD format
-        end_date: End date in YYYY-MM-DD format
-        group_by: Group by "category" or "account" (default: "category")
+        start_date: Start date in format "YYYY-MM-DD"
+        end_date: End date in format "YYYY-MM-DD"
+        group_by: Grouping method - "category" or "account" (default: "category")
         
     Returns:
-        JSON string with spending distribution data
+        JSON string containing spending distribution data
     """
     service, session = get_financial_summary_service()
     try:
@@ -202,12 +204,14 @@ def get_spending_distribution(start_date: str, end_date: str, group_by: str = "c
 
 @mcp.tool()
 def get_account_breakdown() -> str:
-    """Get current balance breakdown by account.
+    """Get current account breakdown by type with balances and percentages.
     
-    Returns balance distribution across all active accounts with percentages.
+    This tool provides chart-ready data for account breakdown visualization in the generative UI.
+    Returns total balance, breakdown by type (liquidity/investments/other), and individual
+    account details with percentages.
     
     Returns:
-        JSON string with account breakdown data
+        JSON string containing account breakdown data
     """
     service, session = get_financial_summary_service()
     try:

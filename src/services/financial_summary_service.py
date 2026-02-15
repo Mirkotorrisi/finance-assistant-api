@@ -1,109 +1,68 @@
-"""Financial Summary Service for aggregated financial data."""
+"""Service for UI-driven financial aggregation and summary data."""
 
-from typing import List, Dict, Any
-from datetime import datetime
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
-from src.database.models import Transaction, Account
-from src.services.account_service import AccountService
+from sqlalchemy import func, and_, extract
+from datetime import datetime
+from src.database.models import MonthlyAccountSnapshot, Account, Transaction, Category
 
 
 class FinancialSummaryService:
-    """Service for generating financial summaries and breakdowns."""
+    """Service for aggregating financial data for UI components."""
+    
+    # Account type categorization
+    LIQUIDITY_TYPES = {"checking", "savings", "cash"}
+    INVESTMENT_TYPES = {"investment", "brokerage", "retirement"}
     
     def __init__(self, session: Session):
-        """Initialize the FinancialSummaryService.
-        
-        Args:
-            session: SQLAlchemy database session
-        """
         self.session = session
-        self.account_service = AccountService(session)
     
     def get_monthly_summary(self, month: str) -> Dict[str, Any]:
-        """Get aggregated monthly financial summary.
-        
-        Returns aggregated monthly financial data for SummaryTable component.
+        """Get monthly financial summary for a specific month.
         
         Args:
-            month: String in YYYY-MM format (e.g., "2026-02")
+            month: Month in format "YYYY-MM" (e.g., "2024-01")
             
         Returns:
-            Dictionary containing monthly summary with schema:
-            {
-                "month": "2026-02",
-                "income": 5000.00,
-                "expenses": 3200.00,
-                "net": 1800.00,
-                "top_categories": [
-                    {"name": "Food", "amount": 800.00, "count": 45},
-                    {"name": "Transport", "amount": 500.00, "count": 20}
-                ],
-                "accounts": [
-                    {"id": 1, "name": "Bank Account", "balance": 15000.00}
-                ]
-            }
+            Dictionary containing:
+            - month: Month string
+            - income: Total income for the month
+            - expenses: Total expenses for the month
+            - net: Net income (income - expenses)
+            - top_categories: List of top spending categories with amounts
         """
-        # Parse month string
         try:
+            # Parse the month string
             year, month_num = month.split("-")
             year = int(year)
             month_num = int(month_num)
         except (ValueError, AttributeError):
-            raise ValueError(f"Invalid month format: {month}. Expected YYYY-MM format.")
+            raise ValueError("Invalid month format. Use 'YYYY-MM' (e.g., '2024-01')")
         
-        if month_num < 1 or month_num > 12:
-            raise ValueError(f"Invalid month number: {month_num}. Must be between 1 and 12.")
+        # Get aggregated data from snapshots
+        result = self.session.query(
+            func.sum(MonthlyAccountSnapshot.total_income).label('income'),
+            func.sum(MonthlyAccountSnapshot.total_expense).label('expenses')
+        ).filter(
+            and_(
+                MonthlyAccountSnapshot.year == year,
+                MonthlyAccountSnapshot.month == month_num
+            )
+        ).first()
         
-        # Query transactions for the given month
-        transactions = self.session.query(Transaction).filter(
-            extract('year', Transaction.date) == year,
-            extract('month', Transaction.date) == month_num
-        ).all()
-        
-        # Calculate totals
-        income = sum(t.amount for t in transactions if t.amount > 0)
-        expenses = sum(abs(t.amount) for t in transactions if t.amount < 0)
+        income = result.income or 0.0
+        expenses = result.expenses or 0.0
         net = income - expenses
         
-        # Group by category and calculate
-        category_data = {}
-        for t in transactions:
-            if t.amount < 0:  # Only count expenses for categories
-                category = t.category
-                if category not in category_data:
-                    category_data[category] = {"amount": 0.0, "count": 0}
-                category_data[category]["amount"] += abs(t.amount)
-                category_data[category]["count"] += 1
-        
-        # Sort categories by amount and take top 5
-        top_categories = [
-            {"name": cat, "amount": data["amount"], "count": data["count"]}
-            for cat, data in sorted(
-                category_data.items(),
-                key=lambda x: x[1]["amount"],
-                reverse=True
-            )[:5]
-        ]
-        
-        # Get current account balances
-        accounts = self.account_service.list_accounts(active_only=True)
-        account_balances = []
-        for account in accounts:
-            balance = self.account_service.get_account_balance(account["id"])
-            account_balances.append({
-                "id": account["id"],
-                "name": account["name"],
-                "balance": balance
-            })
+        # Get top spending categories from transactions
+        top_categories = self._get_top_categories(year, month_num, limit=5)
         
         return {
             "month": month,
-            "income": income,
-            "expenses": expenses,
-            "net": net,
-            "top_categories": top_categories,
-            "accounts": account_balances
+            "income": round(income, 2),
+            "expenses": round(expenses, 2),
+            "net": round(net, 2),
+            "top_categories": top_categories
         }
     
     def get_spending_distribution(
@@ -111,127 +70,267 @@ class FinancialSummaryService:
         start_date: str,
         end_date: str,
         group_by: str = "category"
-    ) -> List[Dict[str, Any]]:
-        """Get spending breakdown for bubble/pie charts.
+    ) -> Dict[str, Any]:
+        """Get spending distribution for a date range.
         
         Args:
-            start_date: String in YYYY-MM-DD format
-            end_date: String in YYYY-MM-DD format
-            group_by: "category" or "account" (default: "category")
+            start_date: Start date in format "YYYY-MM-DD"
+            end_date: End date in format "YYYY-MM-DD"
+            group_by: Grouping method - "category" or "account" (default: "category")
             
         Returns:
-            List of dictionaries with schema:
-            [
-                {"name": "Food", "amount": 1200.00, "percentage": 37.5, "count": 120},
-                {"name": "Transport", "amount": 800.00, "percentage": 25.0, "count": 45}
-            ]
+            Dictionary containing:
+            - start_date: Start date
+            - end_date: End date
+            - group_by: Grouping method used
+            - total_amount: Total spending amount
+            - distribution: List of items with amount, percent, count
         """
-        # Validate group_by parameter
-        if group_by not in ["category", "account"]:
-            raise ValueError(f"Invalid group_by parameter: {group_by}. Must be 'category' or 'account'.")
-        
-        # Parse date strings
         try:
-            start_date_obj = datetime.fromisoformat(start_date).date()
-            end_date_obj = datetime.fromisoformat(end_date).date()
-        except (ValueError, AttributeError) as e:
-            raise ValueError(f"Invalid date format. Expected YYYY-MM-DD format. Error: {e}")
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except (ValueError, AttributeError):
+            raise ValueError("Invalid date format. Use 'YYYY-MM-DD'")
         
-        # Query transactions in date range (only expenses)
-        transactions = self.session.query(Transaction).filter(
-            Transaction.date >= start_date_obj,
-            Transaction.date <= end_date_obj,
-            Transaction.amount < 0  # Only expenses
-        ).all()
-        
-        if not transactions:
-            return []
-        
-        # Group by category or account
-        grouped_data = {}
+        if group_by not in ["category", "account"]:
+            raise ValueError("group_by must be 'category' or 'account'")
         
         if group_by == "category":
-            for t in transactions:
-                category = t.category
-                if category not in grouped_data:
-                    grouped_data[category] = {"amount": 0.0, "count": 0}
-                grouped_data[category]["amount"] += abs(t.amount)
-                grouped_data[category]["count"] += 1
-        else:  # group_by == "account"
-            # Get account names
-            accounts = {acc["id"]: acc["name"] for acc in self.account_service.list_accounts(active_only=False)}
+            # Query transactions for the date range (only expenses - negative amounts)
+            query = self.session.query(Transaction).filter(
+                and_(
+                    Transaction.date >= start,
+                    Transaction.date <= end,
+                    Transaction.amount < 0  # Only expenses
+                )
+            )
             
-            for t in transactions:
-                if t.account_id is not None:
-                    account_name = accounts.get(t.account_id, f"Account {t.account_id}")
-                else:
-                    account_name = "Unassigned"
+            transactions = query.all()
+            
+            if not transactions:
+                return {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "group_by": group_by,
+                    "total_amount": 0.0,
+                    "distribution": []
+                }
+            
+            # Calculate distribution by category
+            distribution_dict = {}
+            total_amount = 0.0
+            
+            for txn in transactions:
+                amount = abs(txn.amount)
+                total_amount += amount
+                key = txn.category
                 
-                if account_name not in grouped_data:
-                    grouped_data[account_name] = {"amount": 0.0, "count": 0}
-                grouped_data[account_name]["amount"] += abs(t.amount)
-                grouped_data[account_name]["count"] += 1
+                if key not in distribution_dict:
+                    distribution_dict[key] = {"amount": 0.0, "count": 0}
+                
+                distribution_dict[key]["amount"] += amount
+                distribution_dict[key]["count"] += 1
+        else:  # group_by == "account"
+            # Query transactions with account names for better UX
+            query = self.session.query(
+                Transaction,
+                Account.name
+            ).outerjoin(
+                Account, Transaction.account_id == Account.id
+            ).filter(
+                and_(
+                    Transaction.date >= start,
+                    Transaction.date <= end,
+                    Transaction.amount < 0  # Only expenses
+                )
+            )
+            
+            results = query.all()
+            
+            if not results:
+                return {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "group_by": group_by,
+                    "total_amount": 0.0,
+                    "distribution": []
+                }
+            
+            # Calculate distribution by account
+            distribution_dict = {}
+            total_amount = 0.0
+            
+            for txn, account_name in results:
+                amount = abs(txn.amount)
+                total_amount += amount
+                key = account_name if account_name else "No Account"
+                
+                if key not in distribution_dict:
+                    distribution_dict[key] = {"amount": 0.0, "count": 0}
+                
+                distribution_dict[key]["amount"] += amount
+                distribution_dict[key]["count"] += 1
         
-        # Calculate total for percentages
-        total_amount = sum(data["amount"] for data in grouped_data.values())
-        
-        # Build result list with percentages
-        result = []
-        for name, data in sorted(grouped_data.items(), key=lambda x: x[1]["amount"], reverse=True):
-            percentage = (data["amount"] / total_amount * 100) if total_amount > 0 else 0.0
-            result.append({
-                "name": name,
-                "amount": data["amount"],
-                "percentage": round(percentage, 2),
+        # Convert to list and calculate percentages
+        distribution = []
+        for key, data in distribution_dict.items():
+            percent = (data["amount"] / total_amount * 100) if total_amount > 0 else 0
+            distribution.append({
+                "name": key,
+                "amount": round(data["amount"], 2),
+                "percent": round(percent, 2),
                 "count": data["count"]
             })
         
-        return result
-    
-    def get_account_breakdown(self) -> List[Dict[str, Any]]:
-        """Get current balance breakdown by account.
+        # Sort by amount descending
+        distribution.sort(key=lambda x: x["amount"], reverse=True)
         
-        Returns current balance breakdown by account for stacked/donut charts.
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "group_by": group_by,
+            "total_amount": round(total_amount, 2),
+            "distribution": distribution
+        }
+    
+    def get_account_breakdown(self) -> Dict[str, Any]:
+        """Get current account breakdown by type.
         
         Returns:
-            List of dictionaries with schema:
-            [
-                {
-                    "account_id": 1,
-                    "account_name": "Bank Account",
-                    "balance": 15000.00,
-                    "percentage": 75.0,
-                    "currency": "EUR"
-                }
-            ]
+            Dictionary containing:
+            - total_balance: Total balance across all accounts
+            - by_type: Breakdown by account type (liquidity, investments, other)
+            - accounts: List of individual account balances with percentages
         """
-        # Get all active accounts
-        accounts = self.account_service.list_accounts(active_only=True)
+        # Get the most recent snapshots for each account
+        # We need to find the latest year-month combination per account
+        subquery = self.session.query(
+            MonthlyAccountSnapshot.account_id,
+            func.max(MonthlyAccountSnapshot.year * 100 + MonthlyAccountSnapshot.month).label('max_period')
+        ).group_by(MonthlyAccountSnapshot.account_id).subquery()
         
-        if not accounts:
-            return []
+        # Join to get the actual snapshots
+        snapshots = self.session.query(
+            MonthlyAccountSnapshot.account_id,
+            MonthlyAccountSnapshot.ending_balance,
+            Account.name,
+            Account.type,
+            Account.currency
+        ).join(
+            subquery,
+            and_(
+                MonthlyAccountSnapshot.account_id == subquery.c.account_id,
+                MonthlyAccountSnapshot.year * 100 + MonthlyAccountSnapshot.month == subquery.c.max_period
+            )
+        ).join(
+            Account,
+            MonthlyAccountSnapshot.account_id == Account.id
+        ).filter(
+            Account.is_active
+        ).all()
         
-        # Get balances for each account
-        account_data = []
-        total_balance = 0.0
+        if not snapshots:
+            return {
+                "total_balance": 0.0,
+                "by_type": {
+                    "liquidity": {"amount": 0.0, "percent": 0.0},
+                    "investments": {"amount": 0.0, "percent": 0.0},
+                    "other": {"amount": 0.0, "percent": 0.0}
+                },
+                "accounts": []
+            }
         
-        for account in accounts:
-            balance = self.account_service.get_account_balance(account["id"])
-            if balance > 0:  # Only include accounts with positive balance
-                account_data.append({
-                    "account_id": account["id"],
-                    "account_name": account["name"],
-                    "balance": balance,
-                    "currency": account.get("currency", "EUR")
-                })
-                total_balance += balance
+        # Calculate totals
+        total_balance = sum(snap.ending_balance for snap in snapshots)
         
-        # Calculate percentages
-        for account in account_data:
-            percentage = (account["balance"] / total_balance * 100) if total_balance > 0 else 0.0
-            account["percentage"] = round(percentage, 2)
+        # Categorize by type
+        type_breakdown = {
+            "liquidity": 0.0,
+            "investments": 0.0,
+            "other": 0.0
+        }
         
-        # Sort by balance descending
-        account_data.sort(key=lambda x: x["balance"], reverse=True)
+        accounts_list = []
         
-        return account_data
+        for snap in snapshots:
+            account_type_lower = snap.type.lower()
+            balance = snap.ending_balance
+            
+            # Categorize
+            if account_type_lower in self.LIQUIDITY_TYPES:
+                type_breakdown["liquidity"] += balance
+                category = "liquidity"
+            elif account_type_lower in self.INVESTMENT_TYPES:
+                type_breakdown["investments"] += balance
+                category = "investments"
+            else:
+                type_breakdown["other"] += balance
+                category = "other"
+            
+            # Calculate percentage
+            percent = (balance / total_balance * 100) if total_balance > 0 else 0
+            
+            accounts_list.append({
+                "account_id": snap.account_id,
+                "name": snap.name,
+                "type": snap.type,
+                "category": category,
+                "balance": round(balance, 2),
+                "percent": round(percent, 2),
+                "currency": snap.currency
+            })
+        
+        # Sort accounts by balance descending
+        accounts_list.sort(key=lambda x: x["balance"], reverse=True)
+        
+        # Prepare by_type breakdown with percentages
+        by_type = {}
+        for type_name, amount in type_breakdown.items():
+            percent = (amount / total_balance * 100) if total_balance > 0 else 0
+            by_type[type_name] = {
+                "amount": round(amount, 2),
+                "percent": round(percent, 2)
+            }
+        
+        return {
+            "total_balance": round(total_balance, 2),
+            "by_type": by_type,
+            "accounts": accounts_list
+        }
+    
+    def _get_top_categories(self, year: int, month: int, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get top spending categories for a specific month.
+        
+        Args:
+            year: Year
+            month: Month (1-12)
+            limit: Number of top categories to return
+            
+        Returns:
+            List of categories with amounts, sorted by amount descending
+        """
+        # Query transactions for the month (only expenses)
+        result = self.session.query(
+            Transaction.category,
+            func.sum(func.abs(Transaction.amount)).label('total_amount'),
+            func.count(Transaction.id).label('count')
+        ).filter(
+            and_(
+                extract('year', Transaction.date) == year,
+                extract('month', Transaction.date) == month,
+                Transaction.amount < 0  # Only expenses
+            )
+        ).group_by(
+            Transaction.category
+        ).order_by(
+            func.sum(func.abs(Transaction.amount)).desc()
+        ).limit(limit).all()
+        
+        return [
+            {
+                "category": row.category,
+                "amount": round(row.total_amount, 2),
+                "count": row.count
+            }
+            for row in result
+        ]

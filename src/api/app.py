@@ -1,7 +1,7 @@
 """FastAPI application for the finance assistant."""
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -160,37 +160,49 @@ class FinancialDataResponse(BaseModel):
     monthlyData: List[MonthlyDataResponse]
     accountBreakdown: AccountBreakdownResponse
 
-# Financial summary response models
-class TopCategoryResponse(BaseModel):
-    name: str
+# Financial summary models (UI-driven aggregation)
+class TopCategoryItem(BaseModel):
+    category: str
     amount: float
     count: int
-
-class AccountBalanceSummaryResponse(BaseModel):
-    id: int
-    name: str
-    balance: float
 
 class MonthlySummaryResponse(BaseModel):
     month: str
     income: float
     expenses: float
     net: float
-    top_categories: List[TopCategoryResponse]
-    accounts: List[AccountBalanceSummaryResponse]
+    top_categories: List[TopCategoryItem]
 
-class SpendingDistributionItemResponse(BaseModel):
+class DistributionItem(BaseModel):
     name: str
     amount: float
-    percentage: float
+    percent: float
     count: int
 
-class AccountBreakdownItemResponse(BaseModel):
+class SpendingDistributionResponse(BaseModel):
+    start_date: str
+    end_date: str
+    group_by: str
+    total_amount: float
+    distribution: List[DistributionItem]
+
+class TypeBreakdownItem(BaseModel):
+    amount: float
+    percent: float
+
+class AccountItem(BaseModel):
     account_id: int
-    account_name: str
+    name: str
+    type: str
+    category: str
     balance: float
-    percentage: float
+    percent: float
     currency: str
+
+class AccountBreakdownDetailResponse(BaseModel):
+    total_balance: float
+    by_type: Dict[str, TypeBreakdownItem]
+    accounts: List[AccountItem]
 
 # --- Endpoints ---
 
@@ -415,55 +427,55 @@ async def get_account_balance(
     balance = service.get_account_balance(account_id)
     return {"account_id": account_id, "balance": balance}
 
-# --- Financial Summary Endpoints ---
+# --- Financial Summary Endpoints (UI-driven aggregation) ---
 
-@app.get("/api/summary/{month}", response_model=MonthlySummaryResponse)
+@app.get("/api/summary/monthly/{month}", response_model=MonthlySummaryResponse)
 async def get_monthly_summary(
     month: str,
     service: FinancialSummaryService = Depends(get_financial_summary_service)
 ):
-    """Get aggregated monthly financial summary for UI rendering.
+    """Get monthly financial summary including income, expenses, net, and top categories.
     
     Args:
-        month: Month in YYYY-MM format (e.g., "2026-02")
+        month: Month in format "YYYY-MM" (e.g., "2024-01")
         
     Returns:
-        Monthly summary including income, expenses, net, top categories, and account balances
+        Monthly summary with income, expenses, net, and top spending categories
     """
     try:
         return service.get_monthly_summary(month)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/api/spending/distribution", response_model=List[SpendingDistributionItemResponse])
+@app.get("/api/distribution/spending", response_model=SpendingDistributionResponse)
 async def get_spending_distribution(
     start_date: str,
     end_date: str,
     group_by: str = "category",
     service: FinancialSummaryService = Depends(get_financial_summary_service)
 ):
-    """Get spending distribution breakdown for charts.
+    """Get spending distribution breakdown for a date range.
     
     Args:
-        start_date: Start date in YYYY-MM-DD format
-        end_date: End date in YYYY-MM-DD format
-        group_by: Group by "category" or "account" (default: "category")
+        start_date: Start date in format "YYYY-MM-DD"
+        end_date: End date in format "YYYY-MM-DD"  
+        group_by: Grouping method - "category" or "account" (default: "category")
         
     Returns:
-        List of spending distribution items with amounts, percentages, and counts
+        Spending distribution with amounts, percentages, and counts
     """
     try:
         return service.get_spending_distribution(start_date, end_date, group_by)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/api/accounts/breakdown", response_model=List[AccountBreakdownItemResponse])
+@app.get("/api/breakdown/accounts", response_model=AccountBreakdownDetailResponse)
 async def get_account_breakdown(
     service: FinancialSummaryService = Depends(get_financial_summary_service)
 ):
-    """Get current balance breakdown by account.
+    """Get current account breakdown by type with balances and percentages.
     
     Returns:
-        List of accounts with balances, percentages, and currencies
+        Account breakdown by type (liquidity, investments, other) with individual account details
     """
     return service.get_account_breakdown()
