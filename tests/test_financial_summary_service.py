@@ -77,11 +77,6 @@ class TestGetMonthlySummary:
         with pytest.raises(ValueError, match="Invalid month number"):
             financial_summary_service.get_monthly_summary("2026-13")
     
-    def test_get_monthly_summary_invalid_month_number(self, financial_summary_service):
-        """Test monthly summary with invalid month number."""
-        with pytest.raises(ValueError, match="Invalid month number"):
-            financial_summary_service.get_monthly_summary("2026-13")
-    
     def test_get_monthly_summary_no_transactions(self, financial_summary_service, mock_session, mock_account_service):
         """Test monthly summary with no transactions."""
         # Mock empty transactions properly
