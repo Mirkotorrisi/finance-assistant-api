@@ -20,10 +20,10 @@ A professional, self-contained virtual assistant for managing personal finances.
 
 The system is split into two main components:
 
-1.  **Core Backend / MCP Server**: owns the business logic and database.
-2.  **LLM Agent**: consumes the MCP Server APIs.
+1. **Core Backend / MCP Server**: owns the business logic and database.
+2. **LLM Agent**: consumes the MCP Server APIs.
 
-```
+```bash
 llm-finance-assistant/
 ├── src/
 │   ├── repositories/      # Data Access Layer (SQLAlchemy)
@@ -59,6 +59,7 @@ llm-finance-assistant/
 1. **Install Dependencies**:
 
    Using pipenv:
+
    ```bash
    pipenv install
    ```
@@ -75,6 +76,7 @@ llm-finance-assistant/
 
 3. **Database Setup** (Optional):
    In development mode, tables are created automatically on first run. To seed the database:
+
    ```bash
    python scripts/seed_database.py
    ```
@@ -90,7 +92,8 @@ uvicorn src.api.app:app --reload
 ```
 
 The API will be available at `http://localhost:8000`.
-- **Docs**: http://localhost:8000/docs
+
+- **Docs**: [http://localhost:8000/docs]
 
 ### 2. MCP Server (for Agents)
 
@@ -102,17 +105,10 @@ python -m src.mcp.server
 
 This starts the MCP server using the `mcp` library (FastMCP). LLM agents can connect to this server to discover and call tools.
 
-### 3. CLI
-
-Run the assistant in interactive mode (Note: CLI needs update to use new services, currently uses LangGraph workflow):
-
-```bash
-python -m src.main_cli
-```
-
 ## MCP Tools
 
 The following tools are exposed by the MCP Server:
+
 - `add_transaction`
 - `list_transactions`
 - `update_transaction`
