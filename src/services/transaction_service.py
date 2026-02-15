@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from src.database.models import Transaction, Category
+from src.database.models import Transaction, Category, Account
 from src.repositories.transaction_repository import TransactionRepository
 from src.repositories.category_repository import CategoryRepository
 
@@ -16,14 +16,15 @@ class TransactionService:
         self, 
         category: Optional[str] = None, 
         start_date: Optional[str] = None, 
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        account_id: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """List transactions with optional filters."""
         # Convert string dates to date objects if present
         start_date_obj = datetime.datetime.fromisoformat(start_date).date() if start_date else None
         end_date_obj = datetime.datetime.fromisoformat(end_date).date() if end_date else None
         
-        transactions = self.transaction_repo.list(category, start_date_obj, end_date_obj)
+        transactions = self.transaction_repo.list(category, start_date_obj, end_date_obj, account_id)
         return [t.to_dict() for t in transactions]
 
     def add_transaction(
@@ -42,6 +43,10 @@ class TransactionService:
         else:
             date_str = date
             transaction_date = datetime.datetime.fromisoformat(date).date()
+
+        # Validate account if provided
+        if account_id is not None:
+            self._validate_account_exists(account_id)
 
         self._ensure_category_exists(category)
 
@@ -117,6 +122,19 @@ class TransactionService:
         # TODO: If we switch to Account-based source of truth, this should call SnapshotService/AccountService
         return self.transaction_repo.get_total_balance()
 
+    def _validate_account_exists(self, account_id: int) -> None:
+        """Validate that an account exists.
+        
+        Args:
+            account_id: The account ID to validate
+            
+        Raises:
+            ValueError: If account does not exist
+        """
+        account = self.session.query(Account).filter(Account.id == account_id).first()
+        if not account:
+            raise ValueError(f"Account with id {account_id} does not exist")
+
     def _ensure_category_exists(self, category_name: str) -> None:
         """Ensure a category exists."""
         if not category_name:
@@ -124,34 +142,10 @@ class TransactionService:
             
         existing = self.category_repo.get_by_name(category_name)
         if not existing:
-            new_category = Category(name=category_name.lower(), type="expense") # Default to expense, logic can be improved
-            # Determine type based on some logic if needed, but for now safe default
-            # Actually, we don't know amount here easily in 'ensure', but usually caller has it.
-            # But the Category model requires 'type'. 
-            # FinanceMCPDatabase.add_transaction didn't set type!
-            # Let's check FinanceMCPDatabase._ensure_category_exists
-            # It just sets name. `type` is nullable?
-            # Model says: `type = Column(String(10), nullable=False)`
-            # FinanceMCPDatabase: `new_category = Category(name=category_name.lower())`
-            # This would fail if type is nullable=False! 
-            # Wait, let me check models.py again.
-            # `type = Column(String(10), nullable=False)`
-            # How did `FinanceMCPDatabase` work?
-            # Maybe it relied on default? No default in model.
-            # Maybe the code I read had a bug or I missed something.
-            # `FinanceMCPDatabase.py`:
-            # `new_category = Category(name=category_name.lower())`
-            # `self.db.add(new_category)`
-            # This SHOULD fail if type is not nullable.
-            # I'll default to 'expense' to be safe, or 'unknown'. 
-            # Or maybe check if `FinanceMCPDatabase` was actually working. 
-            # I'll stick to 'expense' for now as a safe bet for personal finance.
+            new_category = Category(name=category_name.lower(), type="expense")
             try:
                 self.category_repo.create(new_category)
             except IntegrityError:
-                # Handled by repo usually, but repo re-raises. 
-                # Repo checks session.commit() which might raise.
-                # If race condition, that's fine.
                 self.session.rollback()
             except Exception as e:
                  print(f"Warning: Failed to create category '{category_name}': {e}")

@@ -83,6 +83,7 @@ class TransactionCreate(BaseModel):
     description: str
     date: Optional[str] = None
     currency: Optional[str] = "EUR"
+    account_id: Optional[int] = None
 
 class TransactionUpdate(BaseModel):
     amount: Optional[float] = None
@@ -90,6 +91,7 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     date: Optional[str] = None
     currency: Optional[str] = None
+    account_id: Optional[int] = None
 
 class TransactionResponse(BaseModel):
     id: int
@@ -98,6 +100,7 @@ class TransactionResponse(BaseModel):
     category: str
     description: str
     currency: str
+    account_id: Optional[int] = None
 
 class BalanceResponse(BaseModel):
     balance: float
@@ -159,10 +162,11 @@ async def list_transactions(
     category: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    account_id: Optional[int] = None,
     service: TransactionService = Depends(get_transaction_service)
 ):
     """List transactions with optional filters."""
-    return service.list_transactions(category, start_date, end_date)
+    return service.list_transactions(category, start_date, end_date, account_id)
 
 @app.post("/api/transactions", response_model=TransactionResponse)
 async def create_transaction(
@@ -170,13 +174,17 @@ async def create_transaction(
     service: TransactionService = Depends(get_transaction_service)
 ):
     """Create a new transaction."""
-    return service.add_transaction(
-        amount=transaction.amount,
-        category=transaction.category,
-        description=transaction.description,
-        date=transaction.date,
-        currency=transaction.currency
-    )
+    try:
+        return service.add_transaction(
+            amount=transaction.amount,
+            category=transaction.category,
+            description=transaction.description,
+            date=transaction.date,
+            currency=transaction.currency,
+            account_id=transaction.account_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/transactions/bulk", response_model=List[TransactionResponse])
 async def create_transactions_bulk(

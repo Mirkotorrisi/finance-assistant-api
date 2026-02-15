@@ -17,23 +17,24 @@ def get_account_service():
     return AccountService(session), session
 
 @mcp.tool()
-def list_transactions(category: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None) -> str:
+def list_transactions(category: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, account_id: Optional[int] = None) -> str:
     """List financial transactions with optional filters.
     
     Args:
         category: Filter by category name
         start_date: Filter by start date (YYYY-MM-DD)
         end_date: Filter by end date (YYYY-MM-DD)
+        account_id: Filter by account ID
     """
     service, session = get_transaction_service()
     try:
-        results = service.list_transactions(category, start_date, end_date)
+        results = service.list_transactions(category, start_date, end_date, account_id)
         return json.dumps(results, default=str)
     finally:
         session.close()
 
 @mcp.tool()
-def add_transaction(amount: float, category: str, description: str, date: str = None, currency: str = "EUR") -> str:
+def add_transaction(amount: float, category: str, description: str, date: str = None, currency: str = "EUR", account_id: Optional[int] = None) -> str:
     """Add a new financial transaction.
     
     Args:
@@ -42,19 +43,19 @@ def add_transaction(amount: float, category: str, description: str, date: str = 
         description: Description of the transaction
         date: Date of transaction (YYYY-MM-DD), defaults to today
         currency: Currency code (default: EUR)
+        account_id: Optional account ID to associate with the transaction
     """
     service, session = get_transaction_service()
     try:
-        # Auto-detect expense: if amount is positive but category implies expense? 
-        # No, trust the agent/user input. 
-        # But commonly users say "Spent 50". Agent should pass -50.
-        result = service.add_transaction(amount, category, description, date, currency)
+        result = service.add_transaction(amount, category, description, date, currency, account_id)
         return json.dumps(result, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, default=str)
     finally:
         session.close()
 
 @mcp.tool()
-def update_transaction(transaction_id: int, amount: Optional[float] = None, category: Optional[str] = None, description: Optional[str] = None, date: Optional[str] = None) -> str:
+def update_transaction(transaction_id: int, amount: Optional[float] = None, category: Optional[str] = None, description: Optional[str] = None, date: Optional[str] = None, account_id: Optional[int] = None) -> str:
     """Update an existing transaction.
     
     Args:
@@ -63,6 +64,7 @@ def update_transaction(transaction_id: int, amount: Optional[float] = None, cate
         category: New category
         description: New description
         date: New date
+        account_id: New account ID
     """
     service, session = get_transaction_service()
     updates = {}
@@ -70,12 +72,15 @@ def update_transaction(transaction_id: int, amount: Optional[float] = None, cate
     if category is not None: updates['category'] = category
     if description is not None: updates['description'] = description
     if date is not None: updates['date'] = date
+    if account_id is not None: updates['account_id'] = account_id
     
     try:
         result = service.update_transaction(transaction_id, updates)
         if result:
             return json.dumps(result, default=str)
         return "Transaction not found"
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, default=str)
     finally:
         session.close()
 
