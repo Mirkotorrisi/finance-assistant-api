@@ -95,44 +95,81 @@ class FinancialSummaryService:
         if group_by not in ["category", "account"]:
             raise ValueError("group_by must be 'category' or 'account'")
         
-        # Query transactions for the date range (only expenses - negative amounts)
-        query = self.session.query(Transaction).filter(
-            and_(
-                Transaction.date >= start,
-                Transaction.date <= end,
-                Transaction.amount < 0  # Only expenses
+        if group_by == "category":
+            # Query transactions for the date range (only expenses - negative amounts)
+            query = self.session.query(Transaction).filter(
+                and_(
+                    Transaction.date >= start,
+                    Transaction.date <= end,
+                    Transaction.amount < 0  # Only expenses
+                )
             )
-        )
-        
-        transactions = query.all()
-        
-        if not transactions:
-            return {
-                "start_date": start_date,
-                "end_date": end_date,
-                "group_by": group_by,
-                "total_amount": 0.0,
-                "distribution": []
-            }
-        
-        # Calculate distribution
-        distribution_dict = {}
-        total_amount = 0.0
-        
-        for txn in transactions:
-            amount = abs(txn.amount)
-            total_amount += amount
             
-            if group_by == "category":
+            transactions = query.all()
+            
+            if not transactions:
+                return {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "group_by": group_by,
+                    "total_amount": 0.0,
+                    "distribution": []
+                }
+            
+            # Calculate distribution by category
+            distribution_dict = {}
+            total_amount = 0.0
+            
+            for txn in transactions:
+                amount = abs(txn.amount)
+                total_amount += amount
                 key = txn.category
-            else:  # group_by == "account"
-                key = f"Account {txn.account_id}" if txn.account_id else "No Account"
+                
+                if key not in distribution_dict:
+                    distribution_dict[key] = {"amount": 0.0, "count": 0}
+                
+                distribution_dict[key]["amount"] += amount
+                distribution_dict[key]["count"] += 1
+        else:  # group_by == "account"
+            # Query transactions with account names for better UX
+            query = self.session.query(
+                Transaction,
+                Account.name
+            ).outerjoin(
+                Account, Transaction.account_id == Account.id
+            ).filter(
+                and_(
+                    Transaction.date >= start,
+                    Transaction.date <= end,
+                    Transaction.amount < 0  # Only expenses
+                )
+            )
             
-            if key not in distribution_dict:
-                distribution_dict[key] = {"amount": 0.0, "count": 0}
+            results = query.all()
             
-            distribution_dict[key]["amount"] += amount
-            distribution_dict[key]["count"] += 1
+            if not results:
+                return {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "group_by": group_by,
+                    "total_amount": 0.0,
+                    "distribution": []
+                }
+            
+            # Calculate distribution by account
+            distribution_dict = {}
+            total_amount = 0.0
+            
+            for txn, account_name in results:
+                amount = abs(txn.amount)
+                total_amount += amount
+                key = account_name if account_name else "No Account"
+                
+                if key not in distribution_dict:
+                    distribution_dict[key] = {"amount": 0.0, "count": 0}
+                
+                distribution_dict[key]["amount"] += amount
+                distribution_dict[key]["count"] += 1
         
         # Convert to list and calculate percentages
         distribution = []
@@ -189,7 +226,7 @@ class FinancialSummaryService:
             Account,
             MonthlyAccountSnapshot.account_id == Account.id
         ).filter(
-            Account.is_active == True
+            Account.is_active
         ).all()
         
         if not snapshots:

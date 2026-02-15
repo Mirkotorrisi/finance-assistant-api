@@ -137,8 +137,12 @@ class TestGetSpendingDistribution:
         txn2.category = "Transportation"
         txn2.account_id = 2
         
+        # Mock the query to return tuples of (transaction, account_name)
         mock_query = MagicMock()
-        mock_query.filter.return_value.all.return_value = [txn1, txn2]
+        mock_query.outerjoin.return_value.filter.return_value.all.return_value = [
+            (txn1, "Checking Account"),
+            (txn2, "Credit Card")
+        ]
         mock_session.query.return_value = mock_query
         
         result = financial_summary_service.get_spending_distribution(
@@ -147,8 +151,10 @@ class TestGetSpendingDistribution:
         
         assert result["group_by"] == "account"
         assert len(result["distribution"]) == 2
-        assert "Account 1" in [d["name"] for d in result["distribution"]]
-        assert "Account 2" in [d["name"] for d in result["distribution"]]
+        # Verify account names are used instead of IDs
+        names = [d["name"] for d in result["distribution"]]
+        assert "Checking Account" in names
+        assert "Credit Card" in names
     
     def test_invalid_date_format(self, financial_summary_service):
         """Test with invalid date format."""
