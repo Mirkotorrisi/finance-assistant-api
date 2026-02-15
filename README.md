@@ -109,6 +109,7 @@ This starts the MCP server using the `mcp` library (FastMCP). LLM agents can con
 
 The following tools are exposed by the MCP Server:
 
+### Core Transaction & Account Tools
 - `add_transaction`
 - `list_transactions`
 - `update_transaction`
@@ -117,7 +118,23 @@ The following tools are exposed by the MCP Server:
 - `list_accounts`
 - `get_balance_trend`
 
-See [docs/mcp_architecture.md](docs/mcp_architecture.md) for more details.
+### UI-Driven Financial Aggregation Tools (NEW)
+- `get_monthly_summary`: Get monthly income, expenses, net, and top spending categories
+- `get_spending_distribution`: Get category or account breakdown for a date range
+- `get_account_breakdown`: Get current balances organized by account type
+
+See [docs/mcp_architecture.md](docs/mcp_architecture.md) and [docs/FINANCIAL_SUMMARY_API.md](docs/FINANCIAL_SUMMARY_API.md) for more details.
+
+## REST API Endpoints
+
+The REST API provides equivalent endpoints for all MCP tools:
+
+### Financial Aggregation Endpoints
+- `GET /api/summary/monthly/{month}`: Monthly financial summary
+- `GET /api/distribution/spending`: Spending distribution by category or account
+- `GET /api/breakdown/accounts`: Account breakdown by type
+
+See [docs/FINANCIAL_SUMMARY_API.md](docs/FINANCIAL_SUMMARY_API.md) for complete API documentation with examples and schemas.
 
 ## Development
 

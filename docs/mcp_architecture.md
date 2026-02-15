@@ -38,6 +38,9 @@ The MCP Server is defined in `src/mcp/server.py`.
 -   `get_balance`: Get the current total balance.
 -   `list_accounts`: View available accounts.
 -   `get_balance_trend`: View historical balance trend.
+-   `get_monthly_summary`: Get monthly financial summary with income, expenses, net, and top categories (UI-driven).
+-   `get_spending_distribution`: Get spending distribution breakdown by category or account for a date range (UI-driven).
+-   `get_account_breakdown`: Get current account breakdown by type with balances and percentages (UI-driven).
 
 ## REST API Compatibility
 
