@@ -3,6 +3,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 from src.services.transaction_service import TransactionService
 from src.services.account_service import AccountService
+from src.services.financial_summary_service import FinancialSummaryService
 from src.database.init import get_db_session, init_database
 
 # Initialize FastMCP Server
@@ -15,6 +16,10 @@ def get_transaction_service():
 def get_account_service():
     session = get_db_session()
     return AccountService(session), session
+
+def get_financial_summary_service():
+    session = get_db_session()
+    return FinancialSummaryService(session), session
 
 @mcp.tool()
 def list_transactions(category: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, account_id: Optional[int] = None) -> str:
@@ -148,6 +153,70 @@ def get_balance_trend(num_months: int = 12) -> str:
     try:
         trend = service.get_balance_trend(num_months=num_months)
         return json.dumps(trend, default=str)
+    finally:
+        session.close()
+
+@mcp.tool()
+def get_monthly_summary(month: str) -> str:
+    """Get monthly financial summary including income, expenses, net, and top categories.
+    
+    This tool provides chart-ready data for SummaryTable components in the generative UI.
+    Returns structured JSON with income, expenses, net income, and top spending categories.
+    
+    Args:
+        month: Month in format "YYYY-MM" (e.g., "2024-01")
+        
+    Returns:
+        JSON string containing monthly summary data
+    """
+    service, session = get_financial_summary_service()
+    try:
+        result = service.get_monthly_summary(month)
+        return json.dumps(result, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, default=str)
+    finally:
+        session.close()
+
+@mcp.tool()
+def get_spending_distribution(start_date: str, end_date: str, group_by: str = "category") -> str:
+    """Get spending distribution breakdown for a date range.
+    
+    This tool provides chart-ready data for bubble/pie chart components in the generative UI.
+    Returns category or account breakdown with amounts, percentages, and transaction counts.
+    
+    Args:
+        start_date: Start date in format "YYYY-MM-DD"
+        end_date: End date in format "YYYY-MM-DD"
+        group_by: Grouping method - "category" or "account" (default: "category")
+        
+    Returns:
+        JSON string containing spending distribution data
+    """
+    service, session = get_financial_summary_service()
+    try:
+        result = service.get_spending_distribution(start_date, end_date, group_by)
+        return json.dumps(result, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, default=str)
+    finally:
+        session.close()
+
+@mcp.tool()
+def get_account_breakdown() -> str:
+    """Get current account breakdown by type with balances and percentages.
+    
+    This tool provides chart-ready data for account breakdown visualization in the generative UI.
+    Returns total balance, breakdown by type (liquidity/investments/other), and individual
+    account details with percentages.
+    
+    Returns:
+        JSON string containing account breakdown data
+    """
+    service, session = get_financial_summary_service()
+    try:
+        result = service.get_account_breakdown()
+        return json.dumps(result, default=str)
     finally:
         session.close()
 

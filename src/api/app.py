@@ -1,7 +1,7 @@
 """FastAPI application for the finance assistant."""
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from src.services.transaction_service import TransactionService
 from src.services.financial_data_service import FinancialDataService
 from src.services.account_service import AccountService
+from src.services.financial_summary_service import FinancialSummaryService
 from src.database.init import init_database, close_database, get_db_session as _get_db_session
 
 # Configure logging
@@ -70,6 +71,15 @@ def get_financial_data_service():
 def get_account_service():
     session = _get_db_session()
     service = AccountService(session=session)
+    try:
+        yield service
+    finally:
+        session.close()
+
+# Dependency to get FinancialSummaryService instance
+def get_financial_summary_service():
+    session = _get_db_session()
+    service = FinancialSummaryService(session=session)
     try:
         yield service
     finally:
@@ -149,6 +159,50 @@ class FinancialDataResponse(BaseModel):
     netSavings: float
     monthlyData: List[MonthlyDataResponse]
     accountBreakdown: AccountBreakdownResponse
+
+# Financial summary models (UI-driven aggregation)
+class TopCategoryItem(BaseModel):
+    category: str
+    amount: float
+    count: int
+
+class MonthlySummaryResponse(BaseModel):
+    month: str
+    income: float
+    expenses: float
+    net: float
+    top_categories: List[TopCategoryItem]
+
+class DistributionItem(BaseModel):
+    name: str
+    amount: float
+    percent: float
+    count: int
+
+class SpendingDistributionResponse(BaseModel):
+    start_date: str
+    end_date: str
+    group_by: str
+    total_amount: float
+    distribution: List[DistributionItem]
+
+class TypeBreakdownItem(BaseModel):
+    amount: float
+    percent: float
+
+class AccountItem(BaseModel):
+    account_id: int
+    name: str
+    type: str
+    category: str
+    balance: float
+    percent: float
+    currency: str
+
+class AccountBreakdownDetailResponse(BaseModel):
+    total_balance: float
+    by_type: Dict[str, TypeBreakdownItem]
+    accounts: List[AccountItem]
 
 # --- Endpoints ---
 
@@ -372,3 +426,56 @@ async def get_account_balance(
     
     balance = service.get_account_balance(account_id)
     return {"account_id": account_id, "balance": balance}
+
+# --- Financial Summary Endpoints (UI-driven aggregation) ---
+
+@app.get("/api/summary/monthly/{month}", response_model=MonthlySummaryResponse)
+async def get_monthly_summary(
+    month: str,
+    service: FinancialSummaryService = Depends(get_financial_summary_service)
+):
+    """Get monthly financial summary including income, expenses, net, and top categories.
+    
+    Args:
+        month: Month in format "YYYY-MM" (e.g., "2024-01")
+        
+    Returns:
+        Monthly summary with income, expenses, net, and top spending categories
+    """
+    try:
+        return service.get_monthly_summary(month)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/distribution/spending", response_model=SpendingDistributionResponse)
+async def get_spending_distribution(
+    start_date: str,
+    end_date: str,
+    group_by: str = "category",
+    service: FinancialSummaryService = Depends(get_financial_summary_service)
+):
+    """Get spending distribution breakdown for a date range.
+    
+    Args:
+        start_date: Start date in format "YYYY-MM-DD"
+        end_date: End date in format "YYYY-MM-DD"  
+        group_by: Grouping method - "category" or "account" (default: "category")
+        
+    Returns:
+        Spending distribution with amounts, percentages, and counts
+    """
+    try:
+        return service.get_spending_distribution(start_date, end_date, group_by)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/breakdown/accounts", response_model=AccountBreakdownDetailResponse)
+async def get_account_breakdown(
+    service: FinancialSummaryService = Depends(get_financial_summary_service)
+):
+    """Get current account breakdown by type with balances and percentages.
+    
+    Returns:
+        Account breakdown by type (liquidity, investments, other) with individual account details
+    """
+    return service.get_account_breakdown()
