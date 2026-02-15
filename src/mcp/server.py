@@ -3,6 +3,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 from src.services.transaction_service import TransactionService
 from src.services.account_service import AccountService
+from src.services.financial_summary_service import FinancialSummaryService
 from src.database.init import get_db_session, init_database
 
 # Initialize FastMCP Server
@@ -15,6 +16,10 @@ def get_transaction_service():
 def get_account_service():
     session = get_db_session()
     return AccountService(session), session
+
+def get_financial_summary_service():
+    session = get_db_session()
+    return FinancialSummaryService(session), session
 
 @mcp.tool()
 def list_transactions(category: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, account_id: Optional[int] = None) -> str:
@@ -148,6 +153,66 @@ def get_balance_trend(num_months: int = 12) -> str:
     try:
         trend = service.get_balance_trend(num_months=num_months)
         return json.dumps(trend, default=str)
+    finally:
+        session.close()
+
+@mcp.tool()
+def get_monthly_summary(month: str) -> str:
+    """Get aggregated monthly financial summary for UI rendering.
+    
+    Returns monthly income, expenses, net, top spending categories, and account balances.
+    
+    Args:
+        month: Month in YYYY-MM format (e.g., "2026-02")
+        
+    Returns:
+        JSON string with monthly summary data
+    """
+    service, session = get_financial_summary_service()
+    try:
+        result = service.get_monthly_summary(month)
+        return json.dumps(result, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, default=str)
+    finally:
+        session.close()
+
+@mcp.tool()
+def get_spending_distribution(start_date: str, end_date: str, group_by: str = "category") -> str:
+    """Get spending distribution breakdown for charts.
+    
+    Returns spending breakdown grouped by category or account for visualization.
+    
+    Args:
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        group_by: Group by "category" or "account" (default: "category")
+        
+    Returns:
+        JSON string with spending distribution data
+    """
+    service, session = get_financial_summary_service()
+    try:
+        result = service.get_spending_distribution(start_date, end_date, group_by)
+        return json.dumps(result, default=str)
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, default=str)
+    finally:
+        session.close()
+
+@mcp.tool()
+def get_account_breakdown() -> str:
+    """Get current balance breakdown by account.
+    
+    Returns balance distribution across all active accounts with percentages.
+    
+    Returns:
+        JSON string with account breakdown data
+    """
+    service, session = get_financial_summary_service()
+    try:
+        result = service.get_account_breakdown()
+        return json.dumps(result, default=str)
     finally:
         session.close()
 
