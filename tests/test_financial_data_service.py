@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, Mock
 from src.services.financial_data_service import FinancialDataService
-from src.database.models import MonthlyAccountSnapshot, Account
+from src.database.models import Account, Transaction
 
 
 @pytest.fixture
@@ -61,10 +61,10 @@ class TestFinancialDataService:
         assert net_savings == 250.0
     
     def test_get_financial_data_no_data(self, financial_service, mock_session):
-        """Test that get_financial_data returns empty response when no data exists."""
-        # Mock query to return empty list
+        """Test that get_financial_data returns empty response when no transactions exist."""
+        # Mock query to return no transactions
         mock_query = MagicMock()
-        mock_query.filter.return_value.all.return_value = []
+        mock_query.filter.return_value.first.return_value = None
         mock_session.query.return_value = mock_query
         
         result = financial_service.get_financial_data(2024)

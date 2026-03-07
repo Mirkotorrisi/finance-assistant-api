@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.database.models import Base, Account, MonthlyAccountSnapshot, Transaction
+from src.database.models import Base, Account, Transaction
 from src.services.financial_summary_service import FinancialSummaryService
 
 
@@ -27,20 +27,10 @@ def test_get_monthly_summary():
         session.add(checking)
         session.commit()
         
-        # Create snapshot for January 2024
-        snapshot = MonthlyAccountSnapshot(
-            account_id=1,
-            year=2024,
-            month=1,
-            starting_balance=5000,
-            ending_balance=5700,
-            total_income=1500,
-            total_expense=800
-        )
-        session.add(snapshot)
-        
-        # Create transactions for top categories
+        # Create transactions for January 2024
+        # Income: 1500, Expenses: 800
         transactions = [
+            Transaction(account_id=1, date=date(2024, 1, 1), amount=1500, category="Salary", description="Monthly salary"),
             Transaction(account_id=1, date=date(2024, 1, 5), amount=-200, category="Groceries", description="Shopping"),
             Transaction(account_id=1, date=date(2024, 1, 10), amount=-150, category="Groceries", description="More shopping"),
             Transaction(account_id=1, date=date(2024, 1, 12), amount=-300, category="Transportation", description="Gas"),
@@ -66,7 +56,7 @@ def test_get_monthly_summary():
             print(f"  {i}. {cat['category']}: ${cat['amount']:,.2f} ({cat['count']} transactions)")
         print("=" * 80 + "\n")
         
-        # Verify results
+        # Verify results (income/expenses now come from transactions)
         assert result['month'] == "2024-01"
         assert result['income'] == 1500.0
         assert result['expenses'] == 800.0
@@ -165,20 +155,19 @@ def test_get_account_breakdown():
         session.add_all([checking, savings, investment, retirement])
         session.commit()
         
-        # Create snapshots (most recent: March 2024)
-        snapshots = [
-            # January
-            MonthlyAccountSnapshot(account_id=1, year=2024, month=1, starting_balance=4000, ending_balance=4500, total_income=1000, total_expense=500),
-            MonthlyAccountSnapshot(account_id=2, year=2024, month=1, starting_balance=10000, ending_balance=10200, total_income=200, total_expense=0),
-            MonthlyAccountSnapshot(account_id=3, year=2024, month=1, starting_balance=50000, ending_balance=51000, total_income=1000, total_expense=0),
-            MonthlyAccountSnapshot(account_id=4, year=2024, month=1, starting_balance=100000, ending_balance=102000, total_income=2000, total_expense=0),
-            # March (most recent)
-            MonthlyAccountSnapshot(account_id=1, year=2024, month=3, starting_balance=4500, ending_balance=5000, total_income=1500, total_expense=1000),
-            MonthlyAccountSnapshot(account_id=2, year=2024, month=3, starting_balance=10200, ending_balance=10500, total_income=300, total_expense=0),
-            MonthlyAccountSnapshot(account_id=3, year=2024, month=3, starting_balance=51000, ending_balance=52000, total_income=1000, total_expense=0),
-            MonthlyAccountSnapshot(account_id=4, year=2024, month=3, starting_balance=102000, ending_balance=105000, total_income=3000, total_expense=0),
+        # Create transactions per account
+        transactions = [
+            # Checking: net 5000
+            Transaction(account_id=1, date=date(2024, 1, 1), amount=6000, category="Salary", description="Salary"),
+            Transaction(account_id=1, date=date(2024, 1, 15), amount=-1000, category="Rent", description="Rent"),
+            # Savings: net 10500
+            Transaction(account_id=2, date=date(2024, 1, 1), amount=10500, category="Transfer", description="Deposit"),
+            # Investment: net 52000
+            Transaction(account_id=3, date=date(2024, 1, 1), amount=52000, category="Investment", description="Buy"),
+            # Retirement: net 105000
+            Transaction(account_id=4, date=date(2024, 1, 1), amount=105000, category="Retirement", description="Contribution"),
         ]
-        session.add_all(snapshots)
+        session.add_all(transactions)
         session.commit()
         
         # Test the service
@@ -197,10 +186,10 @@ def test_get_account_breakdown():
             print(f"  {acc['name']:<20} [{acc['category']:<12}] ${acc['balance']:>10,.2f}  ({acc['percent']:>5.1f}%)")
         print("=" * 80 + "\n")
         
-        # Verify results
+        # Verify results: balances are cumulative transaction sums per account
         assert result['total_balance'] == 172500.0  # 5000 + 10500 + 52000 + 105000
-        assert result['by_type']['liquidity']['amount'] == 15500.0  # checking + savings
-        assert result['by_type']['investments']['amount'] == 157000.0  # investment + retirement
+        assert result['by_type']['liquidity']['amount'] == 15500.0   # checking(5000) + savings(10500)
+        assert result['by_type']['investments']['amount'] == 157000.0  # investment(52000) + retirement(105000)
         assert result['by_type']['other']['amount'] == 0.0
         
         # Verify percentages add up to 100

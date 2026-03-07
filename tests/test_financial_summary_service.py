@@ -4,7 +4,7 @@ import pytest
 from datetime import date
 from unittest.mock import MagicMock, Mock
 from src.services.financial_summary_service import FinancialSummaryService
-from src.database.models import MonthlyAccountSnapshot, Account, Transaction
+from src.database.models import Account, Transaction, Category
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ class TestGetMonthlySummary:
     
     def test_valid_month_format(self, financial_summary_service, mock_session):
         """Test with valid month format."""
-        # Mock query results
+        # Mock query results for transaction aggregation
         mock_result = Mock()
         mock_result.income = 5000.0
         mock_result.expenses = 3000.0
@@ -194,31 +194,31 @@ class TestGetAccountBreakdown:
     
     def test_with_multiple_accounts(self, financial_summary_service, mock_session):
         """Test with multiple accounts of different types."""
-        # Mock snapshots
-        snap1 = Mock()
-        snap1.account_id = 1
-        snap1.ending_balance = 5000.0
-        snap1.name = "Checking Account"
-        snap1.type = "checking"
-        snap1.currency = "EUR"
+        # Mock account balance rows (from outerjoin query)
+        row1 = Mock()
+        row1.id = 1
+        row1.balance = 5000.0
+        row1.name = "Checking Account"
+        row1.type = "checking"
+        row1.currency = "EUR"
         
-        snap2 = Mock()
-        snap2.account_id = 2
-        snap2.ending_balance = 10000.0
-        snap2.name = "Investment Account"
-        snap2.type = "investment"
-        snap2.currency = "EUR"
+        row2 = Mock()
+        row2.id = 2
+        row2.balance = 10000.0
+        row2.name = "Investment Account"
+        row2.type = "investment"
+        row2.currency = "EUR"
         
-        snap3 = Mock()
-        snap3.account_id = 3
-        snap3.ending_balance = 2000.0
-        snap3.name = "Savings Account"
-        snap3.type = "savings"
-        snap3.currency = "EUR"
+        row3 = Mock()
+        row3.id = 3
+        row3.balance = 2000.0
+        row3.name = "Savings Account"
+        row3.type = "savings"
+        row3.currency = "EUR"
         
         mock_query = MagicMock()
-        mock_query.join.return_value.join.return_value.filter.return_value.all.return_value = [
-            snap1, snap2, snap3
+        mock_query.outerjoin.return_value.filter.return_value.group_by.return_value.all.return_value = [
+            row1, row2, row3
         ]
         mock_session.query.return_value = mock_query
         
@@ -244,7 +244,7 @@ class TestGetAccountBreakdown:
     def test_no_accounts(self, financial_summary_service, mock_session):
         """Test when no accounts exist."""
         mock_query = MagicMock()
-        mock_query.join.return_value.join.return_value.filter.return_value.all.return_value = []
+        mock_query.outerjoin.return_value.filter.return_value.group_by.return_value.all.return_value = []
         mock_session.query.return_value = mock_query
         
         result = financial_summary_service.get_account_breakdown()

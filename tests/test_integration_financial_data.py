@@ -2,13 +2,14 @@
 
 import sys
 import os
+from datetime import date
 
 # Add the project root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.database.models import Base, Account, MonthlyAccountSnapshot
+from src.database.models import Base, Account, Transaction
 from src.services.financial_data_service import FinancialDataService
 
 
@@ -29,34 +30,25 @@ def test_financial_data_endpoint():
         session.add_all([checking, investment, savings])
         session.commit()
         
-        # Create test snapshots for 2024
-        snapshots_data = [
+        # Create test transactions for 2024 (income = positive, expense = negative)
+        transactions = [
             # January
-            (1, 2024, 1, 5000, 5200, 500, 300),  # checking
-            (2, 2024, 1, 10000, 10500, 0, 0),    # investment
-            (3, 2024, 1, 3000, 3100, 200, 100),  # savings
+            Transaction(account_id=1, date=date(2024, 1, 15), amount=500, category="Salary", description="Salary"),
+            Transaction(account_id=1, date=date(2024, 1, 20), amount=-300, category="Rent", description="Rent"),
+            Transaction(account_id=3, date=date(2024, 1, 15), amount=200, category="Interest", description="Interest"),
+            Transaction(account_id=3, date=date(2024, 1, 20), amount=-100, category="Fee", description="Fee"),
             # February
-            (1, 2024, 2, 5200, 5400, 600, 400),
-            (2, 2024, 2, 10500, 11000, 0, 0),
-            (3, 2024, 2, 3100, 3200, 300, 200),
+            Transaction(account_id=1, date=date(2024, 2, 15), amount=600, category="Salary", description="Salary"),
+            Transaction(account_id=1, date=date(2024, 2, 20), amount=-400, category="Rent", description="Rent"),
+            Transaction(account_id=3, date=date(2024, 2, 15), amount=300, category="Interest", description="Interest"),
+            Transaction(account_id=3, date=date(2024, 2, 20), amount=-200, category="Fee", description="Fee"),
             # March
-            (1, 2024, 3, 5400, 5800, 700, 300),
-            (2, 2024, 3, 11000, 11500, 0, 0),
-            (3, 2024, 3, 3200, 3400, 400, 200),
+            Transaction(account_id=1, date=date(2024, 3, 15), amount=700, category="Salary", description="Salary"),
+            Transaction(account_id=1, date=date(2024, 3, 20), amount=-300, category="Rent", description="Rent"),
+            Transaction(account_id=3, date=date(2024, 3, 15), amount=400, category="Interest", description="Interest"),
+            Transaction(account_id=3, date=date(2024, 3, 20), amount=-200, category="Fee", description="Fee"),
         ]
-        
-        for account_id, year, month, start_bal, end_bal, income, expense in snapshots_data:
-            snapshot = MonthlyAccountSnapshot(
-                account_id=account_id,
-                year=year,
-                month=month,
-                starting_balance=start_bal,
-                ending_balance=end_bal,
-                total_income=income,
-                total_expense=expense
-            )
-            session.add(snapshot)
-        
+        session.add_all(transactions)
         session.commit()
         
         # Test the service
@@ -93,19 +85,25 @@ def test_financial_data_endpoint():
         
         # Verify calculations
         assert result['year'] == 2024
-        assert result['currentNetWorth'] == 20700.0  # March totals: 5800 + 11500 + 3400
+        # currentNetWorth = sum of all transactions up to end of March
+        # checking: 500-300 + 600-400 + 700-300 = 200+200+400 = 800
+        # savings:  200-100 + 300-200 + 400-200 = 100+100+200 = 400
+        # investment: 0 (no transactions)
+        assert result['currentNetWorth'] == 1200.0
         
         # Check January data
         jan_data = result['monthlyData'][0]
         assert jan_data['month'] == 'Jan'
-        assert jan_data['netWorth'] == 18800.0  # 5200 + 10500 + 3100
-        assert jan_data['income'] == 700.0  # 500 + 0 + 200
-        assert jan_data['expenses'] == 400.0  # 300 + 0 + 100
-        assert jan_data['net'] == 300.0  # 700 - 400
+        # netWorth for Jan = cumulative sum through Jan = 200 + 100 = 300
+        assert jan_data['netWorth'] == 300.0
+        assert jan_data['income'] == 700.0   # 500 + 200
+        assert jan_data['expenses'] == 400.0  # 300 + 100
+        assert jan_data['net'] == 300.0       # 700 - 400
         
-        # Check account breakdown (March values)
-        assert breakdown['liquidity'] == 9200.0  # checking + savings: 5800 + 3400
-        assert breakdown['investments'] == 11500.0  # investment
+        # Check account breakdown (cumulative through March)
+        # checking: 800, savings: 400, investment: 0
+        assert breakdown['liquidity'] == 1200.0   # checking + savings: 800 + 400
+        assert breakdown['investments'] == 0.0    # no investment transactions
         assert breakdown['otherAssets'] == 0.0
         
         print("\n✅ All assertions passed! The financial data endpoint is working correctly.\n")

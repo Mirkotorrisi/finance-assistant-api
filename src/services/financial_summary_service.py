@@ -2,9 +2,9 @@
 
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, extract
+from sqlalchemy import func, and_, extract, case
 from datetime import datetime
-from src.database.models import MonthlyAccountSnapshot, Account, Transaction, Category
+from src.database.models import Account, Transaction, Category
 
 
 class FinancialSummaryService:
@@ -39,14 +39,14 @@ class FinancialSummaryService:
         except (ValueError, AttributeError):
             raise ValueError("Invalid month format. Use 'YYYY-MM' (e.g., '2024-01')")
         
-        # Get aggregated data from snapshots
+        # Get aggregated income and expenses from transactions
         result = self.session.query(
-            func.sum(MonthlyAccountSnapshot.total_income).label('income'),
-            func.sum(MonthlyAccountSnapshot.total_expense).label('expenses')
+            func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label('income'),
+            func.sum(case((Transaction.amount < 0, func.abs(Transaction.amount)), else_=0)).label('expenses')
         ).filter(
             and_(
-                MonthlyAccountSnapshot.year == year,
-                MonthlyAccountSnapshot.month == month_num
+                extract('year', Transaction.date) == year,
+                extract('month', Transaction.date) == month_num
             )
         ).first()
         
@@ -202,34 +202,20 @@ class FinancialSummaryService:
             - by_type: Breakdown by account type (liquidity, investments, other)
             - accounts: List of individual account balances with percentages
         """
-        # Get the most recent snapshots for each account
-        # We need to find the latest year-month combination per account
-        subquery = self.session.query(
-            MonthlyAccountSnapshot.account_id,
-            func.max(MonthlyAccountSnapshot.year * 100 + MonthlyAccountSnapshot.month).label('max_period')
-        ).group_by(MonthlyAccountSnapshot.account_id).subquery()
-        
-        # Join to get the actual snapshots
-        snapshots = self.session.query(
-            MonthlyAccountSnapshot.account_id,
-            MonthlyAccountSnapshot.ending_balance,
+        # For each active account, sum all transactions to get current balance
+        account_balances = self.session.query(
+            Account.id,
             Account.name,
             Account.type,
-            Account.currency
-        ).join(
-            subquery,
-            and_(
-                MonthlyAccountSnapshot.account_id == subquery.c.account_id,
-                MonthlyAccountSnapshot.year * 100 + MonthlyAccountSnapshot.month == subquery.c.max_period
-            )
-        ).join(
-            Account,
-            MonthlyAccountSnapshot.account_id == Account.id
+            Account.currency,
+            func.coalesce(func.sum(Transaction.amount), 0.0).label('balance')
+        ).outerjoin(
+            Transaction, Account.id == Transaction.account_id
         ).filter(
             Account.is_active
-        ).all()
-        
-        if not snapshots:
+        ).group_by(Account.id, Account.name, Account.type, Account.currency).all()
+
+        if not account_balances:
             return {
                 "total_balance": 0.0,
                 "by_type": {
@@ -241,7 +227,7 @@ class FinancialSummaryService:
             }
         
         # Calculate totals
-        total_balance = sum(snap.ending_balance for snap in snapshots)
+        total_balance = sum(row.balance for row in account_balances)
         
         # Categorize by type
         type_breakdown = {
@@ -252,9 +238,9 @@ class FinancialSummaryService:
         
         accounts_list = []
         
-        for snap in snapshots:
-            account_type_lower = snap.type.lower()
-            balance = snap.ending_balance
+        for row in account_balances:
+            account_type_lower = row.type.lower()
+            balance = row.balance
             
             # Categorize
             if account_type_lower in self.LIQUIDITY_TYPES:
@@ -271,13 +257,13 @@ class FinancialSummaryService:
             percent = (balance / total_balance * 100) if total_balance > 0 else 0
             
             accounts_list.append({
-                "account_id": snap.account_id,
-                "name": snap.name,
-                "type": snap.type,
+                "account_id": row.id,
+                "name": row.name,
+                "type": row.type,
                 "category": category,
                 "balance": round(balance, 2),
                 "percent": round(percent, 2),
-                "currency": snap.currency
+                "currency": row.currency
             })
         
         # Sort accounts by balance descending
