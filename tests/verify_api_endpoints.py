@@ -25,7 +25,7 @@ def test_api_endpoints():
             "date": datetime.date.today().isoformat()
         })
         print(f"Create Response: {response.status_code} - {response.json()}")
-        assert response.status_code == 200
+        assert response.status_code == 201
         t_data = response.json()
         assert t_data["amount"] == -25.50
         t_id = t_data["id"]
