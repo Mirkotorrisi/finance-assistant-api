@@ -40,7 +40,7 @@ def list_transactions(category: Optional[str] = None, start_date: Optional[str] 
 
 @mcp.tool()
 def add_transaction(amount: float, category: str, description: str, date: str = None, currency: str = "EUR", account_id: Optional[int] = None) -> str:
-    """Add a new financial transaction.
+    """Add a new financial transaction. If positive is an income, if negative is an expense.
     
     Args:
         amount: Transaction amount (negative for expense, positive for income)
@@ -206,4 +206,4 @@ def get_account_breakdown() -> str:
 if __name__ == "__main__":
     # Ensure database is initialized
     init_database()
-    mcp.run()
+    mcp.run(transport="sse")

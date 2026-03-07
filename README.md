@@ -87,7 +87,7 @@ Interactive Swagger docs: `http://localhost:8000/docs`
 python -m src.mcp.server
 ```
 
-This starts the FastMCP server over stdio. AI agents (e.g. Claude Desktop, any MCP-compatible client) can connect to it to discover and call the financial tools listed in the [MCP Server](#mcp-server) section below.
+This starts the FastMCP server over SSE transport. Your microservice (or any MCP-compatible client) can connect to its SSE endpoint to discover and call the financial tools listed in the [MCP Server](#mcp-server) section below.
 
 ### Docker
 
@@ -114,9 +114,7 @@ The container runs uvicorn on port **8080** (the default for Google Cloud Run). 
 
 > **Note**: When `USE_DATABASE=false` or the PostgreSQL connection fails, the application automatically falls back to an in-memory SQLite database. This is convenient for local development without a running Postgres instance.
 
-## REST API Endpoints
 
-Interactive documentation is available at `http://localhost:8000/docs` once the server is running.
 
 ### Health
 
@@ -162,13 +160,13 @@ Interactive documentation is available at `http://localhost:8000/docs` once the 
 
 ## MCP Server
 
-The MCP server (`src/mcp/server.py`) is built with [FastMCP](https://github.com/jlowin/fastmcp) and exposes the application's business logic as callable tools over the Model Context Protocol. Any MCP-compatible AI agent (e.g. Claude Desktop) can connect to the server and call these tools directly.
+The MCP server (`src/mcp/server.py`) is built with [FastMCP](https://github.com/jlowin/fastmcp) and exposes the application's business logic as callable tools over the Model Context Protocol. It is exposed over **SSE (Server-Sent Events)** so it can be consumed by another microservice (or any MCP-compatible client) over HTTP.
 
 ### How It Works
 
 1. Start the MCP server with `python -m src.mcp.server`.
-2. The server communicates over **stdio** using the MCP protocol.
-3. An AI agent connects to the server, lists the available tools, and calls them by name with JSON arguments.
+2. The server exposes MCP over **SSE transport** (HTTP streaming).
+3. Your microservice connects to the MCP SSE endpoint, lists the available tools, and calls them by name with JSON arguments.
 4. Each tool delegates to the same service layer used by the REST API, so behaviour is identical.
 
 ### Available Tools
@@ -193,35 +191,20 @@ The MCP server (`src/mcp/server.py`) is built with [FastMCP](https://github.com/
 | `get_spending_distribution` | `start_date`, `end_date`, `group_by?` (`category`/`account`) | Spending breakdown for a date range |
 | `get_account_breakdown` | — | Current balances grouped by asset type with percentages |
 
-### Connecting from Claude Desktop
+### Connecting from Another Microservice
 
-Add the following entry to your Claude Desktop MCP configuration:
+Use an MCP client in your microservice and point it to the Finance Assistant MCP SSE endpoint.
 
-```json
-{
-  "mcpServers": {
-    "finance-assistant": {
-      "command": "python",
-      "args": ["-m", "src.mcp.server"],
-      "cwd": "/path/to/finance-assistant-api",
-      "env": {
-        "DB_HOST": "...",
-        "DB_PORT": "...",
-        "DB_NAME": "...",
-        "DB_USER": "...",
-        "DB_PASSWORD": "..."
-      }
-    }
-  }
-}
-```
+Example high-level flow:
+
+1. Start Finance Assistant MCP: `python -m src.mcp.server`.
+2. Configure your microservice MCP client with the SSE URL exposed by FastMCP (commonly `/sse` on the configured host/port).
+3. Connect, discover tools, and invoke them with JSON arguments.
+
+Your microservice is then the integration layer for any downstream agent or application.
 
 ## Running Tests
 
 ```bash
 python -m pytest tests/ -v
 ```
-
-## License
-
-[Add your license here]
