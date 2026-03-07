@@ -107,27 +107,10 @@ def delete_transaction(transaction_id: int) -> str:
 
 @mcp.tool()
 def get_balance() -> str:
-    """Get the current total balance."""
-    # Using AccountService for more accurate balance if available, 
-    # but initially the request mentioned backward compatibility.
-    # We will use AccountService's get_current_total_balance which is smarter.
+    """Get the current total balance by summing all transactions."""
     service, session = get_account_service()
     try:
-        # Check if we have snapshots. If not, fallback to simple transaction sum?
-        # AccountService.get_current_total_balance uses snapshots.
-        # If no snapshots, it returns 0.
-        # Let's check if we should fallback.
-        # Ideally, we should migrate to snapshots. 
-        # But let's expose both or choose one?
-        # The prompt says: "The MCP Server decides... Reading aggregated financial data".
-        
         balance = service.get_current_total_balance()
-        # If balance is 0, maybe check transaction sum?
-        if balance == 0:
-             # Fallback to transaction sum for now to be safe with existing data?
-             # Or maybe just return 0. 
-             # Let's provide a breakdown or just return the balance.
-             pass
         return str(balance)
     finally:
         session.close()

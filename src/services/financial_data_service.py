@@ -2,8 +2,8 @@
 
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from src.database.models import MonthlyAccountSnapshot, Account
+from sqlalchemy import func, and_, extract, or_, case
+from src.database.models import Account, Transaction
 
 
 class FinancialDataService:
@@ -31,12 +31,12 @@ class FinancialDataService:
         Returns:
             Dictionary containing year, currentNetWorth, netSavings, monthlyData, and accountBreakdown
         """
-        # Get all snapshots for the year
-        snapshots = self.session.query(MonthlyAccountSnapshot).filter(
-            MonthlyAccountSnapshot.year == year
-        ).all()
-        
-        if not snapshots:
+        # Check if there are any transactions for this year
+        has_data = self.session.query(Transaction).filter(
+            extract('year', Transaction.date) == year
+        ).first() is not None
+
+        if not has_data:
             return self._empty_response(year)
         
         # Calculate monthly aggregates
@@ -48,7 +48,7 @@ class FinancialDataService:
         # Calculate current net worth (most recent month)
         current_net_worth = self._calculate_current_net_worth(year)
         
-        # Calculate net savings (sum of all monthly nets or Dec - Jan starting)
+        # Calculate net savings (sum of all monthly nets)
         net_savings = self._calculate_net_savings(monthly_data)
         
         return {
@@ -64,23 +64,36 @@ class FinancialDataService:
         monthly_data = []
         
         for month in range(1, 13):
-            # Aggregate data for this month across all accounts
+            # Income and expenses for this specific month
             result = self.session.query(
-                func.sum(MonthlyAccountSnapshot.ending_balance).label('net_worth'),
-                func.sum(MonthlyAccountSnapshot.total_expense).label('expenses'),
-                func.sum(MonthlyAccountSnapshot.total_income).label('income')
+                func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label('income'),
+                func.sum(case((Transaction.amount < 0, func.abs(Transaction.amount)), else_=0)).label('expenses')
             ).filter(
                 and_(
-                    MonthlyAccountSnapshot.year == year,
-                    MonthlyAccountSnapshot.month == month
+                    extract('year', Transaction.date) == year,
+                    extract('month', Transaction.date) == month
                 )
             ).first()
-            
-            net_worth = result.net_worth or 0.0
-            expenses = result.expenses or 0.0
+
             income = result.income or 0.0
+            expenses = result.expenses or 0.0
             net = income - expenses
-            
+
+            # Cumulative net worth: sum of all transactions up to end of this month/year
+            net_worth_result = self.session.query(
+                func.sum(Transaction.amount)
+            ).filter(
+                or_(
+                    extract('year', Transaction.date) < year,
+                    and_(
+                        extract('year', Transaction.date) == year,
+                        extract('month', Transaction.date) <= month
+                    )
+                )
+            ).scalar()
+
+            net_worth = net_worth_result or 0.0
+
             monthly_data.append({
                 "month": self.MONTH_NAMES[month],
                 "netWorth": round(net_worth, 2),
@@ -93,43 +106,49 @@ class FinancialDataService:
     
     def _calculate_account_breakdown(self, year: int) -> Dict[str, float]:
         """Calculate account breakdown by type for the most recent month with data."""
-        # Find the most recent month with data in the year
+        # Find the most recent month in the year that has transactions
         max_month_result = self.session.query(
-            func.max(MonthlyAccountSnapshot.month)
+            func.max(extract('month', Transaction.date))
         ).filter(
-            MonthlyAccountSnapshot.year == year
+            extract('year', Transaction.date) == year
         ).scalar()
-        
+
         if not max_month_result:
             return {"liquidity": 0.0, "investments": 0.0, "otherAssets": 0.0}
-        
-        # Get all snapshots for the most recent month, joined with Account info
-        snapshots = self.session.query(
-            MonthlyAccountSnapshot.ending_balance,
+
+        # For each account, sum all transactions up to end of that month
+        account_balances = self.session.query(
+            Transaction.account_id,
+            func.sum(Transaction.amount).label('balance'),
             Account.type
         ).join(
-            Account, MonthlyAccountSnapshot.account_id == Account.id
+            Account, Transaction.account_id == Account.id
         ).filter(
-            and_(
-                MonthlyAccountSnapshot.year == year,
-                MonthlyAccountSnapshot.month == max_month_result
-            )
-        ).all()
-        
+            or_(
+                extract('year', Transaction.date) < year,
+                and_(
+                    extract('year', Transaction.date) == year,
+                    extract('month', Transaction.date) <= max_month_result
+                )
+            ),
+            Transaction.account_id.isnot(None)
+        ).group_by(Transaction.account_id, Account.type).all()
+
         # Categorize by account type
         liquidity = 0.0
         investments = 0.0
         other_assets = 0.0
-        
-        for balance, account_type in snapshots:
+
+        for _, balance, account_type in account_balances:
             account_type_lower = account_type.lower()
+            balance = balance or 0.0
             if account_type_lower in self.LIQUIDITY_TYPES:
                 liquidity += balance
             elif account_type_lower in self.INVESTMENT_TYPES:
                 investments += balance
             else:
                 other_assets += balance
-        
+
         return {
             "liquidity": round(liquidity, 2),
             "investments": round(investments, 2),
@@ -137,27 +156,28 @@ class FinancialDataService:
         }
     
     def _calculate_current_net_worth(self, year: int) -> float:
-        """Calculate current net worth (sum of ending balances for most recent month)."""
-        # Find the most recent month with data in the year
+        """Calculate current net worth by summing all transactions up to end of most recent month in year."""
         max_month_result = self.session.query(
-            func.max(MonthlyAccountSnapshot.month)
+            func.max(extract('month', Transaction.date))
         ).filter(
-            MonthlyAccountSnapshot.year == year
+            extract('year', Transaction.date) == year
         ).scalar()
-        
+
         if not max_month_result:
             return 0.0
-        
-        # Sum ending balances for that month
+
         result = self.session.query(
-            func.sum(MonthlyAccountSnapshot.ending_balance)
+            func.sum(Transaction.amount)
         ).filter(
-            and_(
-                MonthlyAccountSnapshot.year == year,
-                MonthlyAccountSnapshot.month == max_month_result
+            or_(
+                extract('year', Transaction.date) < year,
+                and_(
+                    extract('year', Transaction.date) == year,
+                    extract('month', Transaction.date) <= max_month_result
+                )
             )
         ).scalar()
-        
+
         return round(result or 0.0, 2)
     
     def _calculate_net_savings(self, monthly_data: List[Dict[str, Any]]) -> float:

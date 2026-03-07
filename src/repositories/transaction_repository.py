@@ -57,8 +57,6 @@ class TransactionRepository:
         return transaction
 
     def get_total_balance(self) -> float:
-        """Naive sum of all transactions. 
-        Note: Real balance should come from Snapshots.
-        """
+        """Sum of all transactions - represents the current total balance."""
         transactions = self.session.query(Transaction).all()
         return sum(t.amount for t in transactions)

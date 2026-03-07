@@ -1,7 +1,7 @@
 """Database models using SQLAlchemy ORM."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -25,7 +25,6 @@ class Account(Base):
     current_balance = Column(Float, nullable=False, default=0.0)
     
     # Relationships
-    snapshots = relationship("MonthlyAccountSnapshot", back_populates="account", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="account", cascade="all, delete-orphan")
     
     def __repr__(self):
@@ -44,59 +43,6 @@ class Account(Base):
             "currency": self.currency,
             "is_active": self.is_active,
             "current_balance": self.current_balance
-        }
-
-
-class MonthlyAccountSnapshot(Base):
-    """CORE ENTITY: Monthly financial state of an account.
-    
-    This entity represents the monthly financial state of an account
-    and maps 1:1 with a single row in a spreadsheet.
-    
-    Snapshots are the source of truth for balances and totals.
-    Transactions do not define balances; they provide optional detail.
-    """
-    
-    __tablename__ = "monthly_account_snapshots"
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
-    year = Column(Integer, nullable=False, index=True)  # YYYY
-    month = Column(Integer, nullable=False, index=True)  # 1-12
-    starting_balance = Column(Float, nullable=False)
-    ending_balance = Column(Float, nullable=False)
-    total_income = Column(Float, nullable=False, default=0.0)
-    total_expense = Column(Float, nullable=False, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
-    
-    # Unique constraint: one snapshot per (account_id, year, month)
-    __table_args__ = (
-        UniqueConstraint('account_id', 'year', 'month', name='uix_account_year_month'),
-    )
-    
-    # Relationship
-    account = relationship("Account", back_populates="snapshots")
-    
-    def __repr__(self):
-        return f"<MonthlyAccountSnapshot(id={self.id}, account_id={self.account_id}, year={self.year}, month={self.month}, ending_balance={self.ending_balance})>"
-    
-    def to_dict(self):
-        """Convert snapshot to dictionary format.
-        
-        Returns:
-            Dictionary representation of the snapshot
-        """
-        return {
-            "id": self.id,
-            "account_id": self.account_id,
-            "year": self.year,
-            "month": self.month,
-            "starting_balance": self.starting_balance,
-            "ending_balance": self.ending_balance,
-            "total_income": self.total_income,
-            "total_expense": self.total_expense
         }
 
 
@@ -135,13 +81,9 @@ class Category(Base):
 class Transaction(Base):
     """Transaction model for financial transactions.
     
-    IMPORTANT: Transactions are optional granular details, NOT authoritative for totals.
-    They are used for:
-    - Detailed views
-    - Manual expense entry
-    - Fine-grained analytics
-    
-    Balances come from MonthlyAccountSnapshot, not from aggregating transactions.
+    Transactions are the single source of truth for all financial data.
+    Monthly account snapshots are computed by aggregating transactions
+    filtered by account_id and date (year/month).
     """
     
     __tablename__ = "transactions"

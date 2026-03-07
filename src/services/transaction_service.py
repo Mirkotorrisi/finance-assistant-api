@@ -116,10 +116,7 @@ class TransactionService:
         return updated.to_dict()
 
     def get_balance(self) -> float:
-        """Get the current balance (sum of all transactions).
-        Note: This is the naive implementation compatible with FinanceMCPDatabase.
-        """
-        # TODO: If we switch to Account-based source of truth, this should call SnapshotService/AccountService
+        """Get the current balance by summing all transactions."""
         return self.transaction_repo.get_total_balance()
 
     def _validate_account_exists(self, account_id: int) -> None:
