@@ -23,7 +23,7 @@ def test_account_api_endpoints():
             "is_active": True
         })
         print(f"Create Response: {response.status_code} - {response.json()}")
-        assert response.status_code == 200
+        assert response.status_code == 201
         account_data = response.json()
         assert account_data["name"] == "Test Checking Account"
         assert account_data["type"] == "checking"
