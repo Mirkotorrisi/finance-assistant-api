@@ -12,8 +12,8 @@ Successfully implemented UI-driven financial aggregation tools for the generativ
   - Account breakdown by type
 
 ### API Integration  
-- 3 new MCP tools for AI agents
-- 3 new REST API endpoints for frontend
+- 3 REST API endpoints for frontend
+- MCP exposure via FastApiMCP wrapper (tools auto-generated from endpoints)
 - 8 Pydantic response models
 - Full OpenAPI/Swagger documentation
 
@@ -42,7 +42,7 @@ Successfully implemented UI-driven financial aggregation tools for the generativ
 - Total: ~1,710 lines
 
 ## Architecture
-- Consistent data flow: Database → Service → MCP/REST
+- Consistent data flow: Database → Service → REST (and MCP auto-exposed from REST)
 - Type-safe with Pydantic models
 - Chart-ready JSON responses
 - Input validation and error handling

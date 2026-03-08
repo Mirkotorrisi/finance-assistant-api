@@ -13,7 +13,7 @@ Successfully integrated `account_id` support across all transaction APIs (REST a
 
 **Lines changed**: 50 modifications (28 additions, 22 deletions)
 
-### 2. REST API Layer (`src/api/app.py`)
+### 2. REST API Layer (`app.py`, `src/api/models/transaction.py`, `src/api/routes/transactions.py`)
 - ✅ Added `account_id: Optional[int]` to `TransactionCreate` Pydantic model
 - ✅ Added `account_id: Optional[int]` to `TransactionUpdate` Pydantic model
 - ✅ Added `account_id: Optional[int]` to `TransactionResponse` Pydantic model
@@ -135,7 +135,7 @@ list_transactions(account_id=1)
 
 ## Files Modified
 - `src/services/transaction_service.py` (+28/-22)
-- `src/api/app.py` (+16/-8)
+- `app.py` (+16/-8 equivalent moved content)
 - `src/mcp/server.py` (+13/-8)
 
 ## Files Created

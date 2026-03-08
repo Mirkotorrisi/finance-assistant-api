@@ -21,5 +21,5 @@ COPY . .
 # Esponi la porta 8080 (quella predefinita di Cloud Run)
 EXPOSE 8080
 
-# Avvia FastAPI con Uvicorn
-CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Avvia FastAPI
+CMD ["python3", "app.py"]

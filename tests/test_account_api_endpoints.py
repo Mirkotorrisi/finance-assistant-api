@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 # Add project root to path
 sys.path.append(os.getcwd())
 
-from src.api.app import app
+from app import app
 
 
 def test_account_api_endpoints():

@@ -20,6 +20,7 @@ psycopg2-binary = "*"
 fastapi = "*"
 mcp = "*"
 alembic = "*"
+fastapi-mcp = "*"
 
 [dev-packages]
 

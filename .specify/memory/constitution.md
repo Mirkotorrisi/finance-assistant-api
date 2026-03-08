@@ -63,7 +63,7 @@ Vector stores contain ONLY pre-computed narrative summaries, never raw transacti
 The backend exposes functionality through two parallel interfaces that share the same Service layer: REST API for frontends, MCP Server for LLM agents.
 
 **Rules:**
-- **REST API** (`src/api/app.py`): FastAPI endpoints for web/mobile frontends
+- **REST API** (`app.py`): FastAPI entrypoint with routes in `src/api/routes/` for web/mobile frontends
 - **MCP Server** (`src/mcp/server.py`): FastMCP tools for LLM agent integration
 - Both interfaces MUST use the same Services (no duplicate logic)
 - Both interfaces MUST maintain feature parity for core operations
@@ -131,7 +131,7 @@ The backend is designed to support dynamic frontend generation where both UI com
 - One repository per entity (e.g., `TransactionRepository`, `AccountRepository`)
 - One service per domain area (e.g., `TransactionService`, `FinancialDataService`)
 - Services may use multiple repositories
-- Domain models in `src/models/domain.py`, database models in `src/database/models.py`
+- API schema models in `src/api/models/`, database models in `src/database/models.py`
 
 ### Testing Requirements
 

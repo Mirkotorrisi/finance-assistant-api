@@ -89,7 +89,7 @@ class TestFinancialDataResponseModels:
     
     def test_monthly_data_response_model(self):
         """Test MonthlyDataResponse model."""
-        from src.api.app import MonthlyDataResponse
+        from src.models import MonthlyDataResponse
         
         data = MonthlyDataResponse(
             month="Jan",
@@ -107,7 +107,7 @@ class TestFinancialDataResponseModels:
     
     def test_account_breakdown_response_model(self):
         """Test AccountBreakdownResponse model."""
-        from src.api.app import AccountBreakdownResponse
+        from src.models import AccountBreakdownResponse
         
         data = AccountBreakdownResponse(
             liquidity=1000.0,
@@ -121,7 +121,7 @@ class TestFinancialDataResponseModels:
     
     def test_financial_data_response_model(self):
         """Test FinancialDataResponse model."""
-        from src.api.app import FinancialDataResponse, MonthlyDataResponse, AccountBreakdownResponse
+        from src.models import FinancialDataResponse, MonthlyDataResponse, AccountBreakdownResponse
         
         monthly = [
             MonthlyDataResponse(month="Jan", netWorth=1000.0, expenses=200.0, income=300.0, net=100.0)

@@ -1,12 +1,12 @@
 # Finance Assistant API
 
-A personal finance backend that exposes a REST API and an MCP (Model Context Protocol) server for managing transactions, accounts, and financial summaries. The application has no LLM or conversational features of its own — its agentic surface is the MCP server, which lets any compatible AI agent call the same business logic that the REST API uses.
+A personal finance backend that exposes a REST API and an MCP (Model Context Protocol) server for managing transactions, accounts, and financial summaries. The application has no LLM or conversational features of its own — its agentic surface is MCP, automatically exposed from the same FastAPI routes.
 
 ## What This Application Does
 
 - **Manages financial transactions and accounts** stored in a PostgreSQL database.
 - **Exposes a REST API** (FastAPI) for direct programmatic access from frontends or other services.
-- **Exposes an MCP server** (FastMCP) so that AI agents can discover and call financial tools via the Model Context Protocol.
+- **Exposes an MCP server** (FastApiMCP) so that AI agents can discover and call tools generated directly from REST endpoints.
 - Provides **financial summaries and aggregations**: monthly breakdowns, spending distributions by category or account, balance trends, and account breakdowns by asset type.
 
 ## Core Technologies
@@ -18,7 +18,7 @@ A personal finance backend that exposes a REST API and an MCP (Model Context Pro
 | **PostgreSQL** | Primary database |
 | **SQLAlchemy** | ORM and database session management |
 | **Alembic** | Database schema migrations |
-| **FastMCP** (`mcp` library) | MCP server for AI agent integration |
+| **FastApiMCP** (`fastapi-mcp`) | Auto-generates MCP tools from FastAPI routes |
 | **Uvicorn** | ASGI server |
 | **Pipenv** | Dependency management |
 
@@ -26,16 +26,15 @@ A personal finance backend that exposes a REST API and an MCP (Model Context Pro
 
 ```
 finance-assistant-api/
+├── app.py                # FastAPI application entrypoint
 ├── src/
-│   ├── api/               # FastAPI application and route definitions
-│   │   └── app.py
-│   ├── mcp/               # MCP server (tool definitions)
-│   │   └── server.py
+│   ├── api/
+│   │   ├── routes/        # Domain-based REST route modules
+│   │   └── models/        # Pydantic API schemas
 │   ├── services/          # Business logic layer
 │   ├── repositories/      # Data access layer (SQLAlchemy)
 │   ├── database/          # DB initialisation, session management, ORM models
-│   ├── config/            # Database configuration
-│   └── models/            # Shared domain models
+│   └── config/            # Database configuration
 ├── migrations/            # Alembic migration scripts
 ├── tests/                 # Test suite
 ├── docs/                  # Extended documentation
@@ -75,7 +74,7 @@ pipenv run alembic upgrade head
 ### REST API
 
 ```bash
-uvicorn src.api.app:app --reload
+uvicorn app:app --reload
 ```
 
 The API is available at `http://localhost:8000`.  
@@ -84,10 +83,10 @@ Interactive Swagger docs: `http://localhost:8000/docs`
 ### MCP Server
 
 ```bash
-python -m src.mcp.server
+python3 app.py
 ```
 
-This starts the FastMCP server over SSE transport. Your microservice (or any MCP-compatible client) can connect to its SSE endpoint to discover and call the financial tools listed in the [MCP Server](#mcp-server) section below.
+This starts the FastAPI app and also mounts MCP via FastApiMCP. Your microservice (or any MCP-compatible client) can connect to the mounted MCP HTTP endpoint and discover tools generated from the REST routes.
 
 ### Docker
 
@@ -131,7 +130,7 @@ The container runs uvicorn on port **8080** (the default for Google Cloud Run). 
 | `POST` | `/api/transactions/bulk` | Bulk-create transactions from an array |
 | `PUT` | `/api/transactions/{transaction_id}` | Partially update a transaction |
 | `DELETE` | `/api/transactions/{transaction_id}` | Delete a transaction |
-| `GET` | `/api/balance` | Get the total balance (sum of all transaction amounts) |
+| `GET` | `/api/transactions/balance` | Get the total balance (sum of all transaction amounts) |
 
 ### Accounts
 
@@ -154,42 +153,29 @@ The container runs uvicorn on port **8080** (the default for Google Cloud Run). 
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/summary/monthly/{month}` | Monthly summary for `YYYY-MM`: total income, expenses, net, and top 5 spending categories |
-| `GET` | `/api/distribution/spending` | Spending distribution for a date range. Query params: `start_date`, `end_date`, `group_by` (`category` or `account`) |
-| `GET` | `/api/breakdown/accounts` | Current balances grouped by asset type (liquidity / investments / other) |
+| `GET` | `/api/financial-summary/monthly/{month}` | Monthly summary for `YYYY-MM`: total income, expenses, net, and top 5 spending categories |
+| `GET` | `/api/financial-summary/spending-distribution` | Spending distribution for a date range. Query params: `start_date`, `end_date`, `group_by` (`category` or `account`) |
+| `GET` | `/api/financial-summary/account-breakdown` | Current balances grouped by asset type (liquidity / investments / other) |
 
 ## MCP Server
 
-The MCP server (`src/mcp/server.py`) is built with [FastMCP](https://github.com/jlowin/fastmcp) and exposes the application's business logic as callable tools over the Model Context Protocol. It is exposed over **SSE (Server-Sent Events)** so it can be consumed by another microservice (or any MCP-compatible client) over HTTP.
+MCP is mounted directly from [app.py](app.py) via FastApiMCP:
+
+- The wrapper converts FastAPI route handlers into MCP tools.
+- Tool names mirror route handler names.
+- REST and MCP stay aligned by design (single source of truth: route layer + services).
+- The duplicated standalone MCP implementation is no longer required for primary usage.
 
 ### How It Works
 
-1. Start the MCP server with `python -m src.mcp.server`.
-2. The server exposes MCP over **SSE transport** (HTTP streaming).
-3. Your microservice connects to the MCP SSE endpoint, lists the available tools, and calls them by name with JSON arguments.
-4. Each tool delegates to the same service layer used by the REST API, so behaviour is identical.
+1. Start the app with `python3 app.py`.
+2. FastApiMCP mounts MCP HTTP endpoints on the same app.
+3. Your microservice connects to the MCP endpoint, lists available tools, and invokes them.
+4. Each tool execution calls the same route/service path used by REST, so behavior remains consistent.
 
 ### Available Tools
 
-#### Transaction & Account Tools
-
-| Tool | Arguments | Description |
-|---|---|---|
-| `list_transactions` | `category?`, `start_date?`, `end_date?`, `account_id?` | List transactions with optional filters |
-| `add_transaction` | `amount`, `category`, `description`, `date?`, `currency?`, `account_id?` | Add a new transaction |
-| `update_transaction` | `transaction_id`, `amount?`, `category?`, `description?`, `date?`, `account_id?` | Update an existing transaction |
-| `delete_transaction` | `transaction_id` | Delete a transaction |
-| `get_balance` | — | Get the current total balance |
-| `list_accounts` | — | List all accounts |
-| `get_balance_trend` | `num_months?` (default 12) | Get the balance trend for the last N months |
-
-#### Financial Summary Tools
-
-| Tool | Arguments | Description |
-|---|---|---|
-| `get_monthly_summary` | `month` (YYYY-MM) | Monthly income, expenses, net, and top spending categories |
-| `get_spending_distribution` | `start_date`, `end_date`, `group_by?` (`category`/`account`) | Spending breakdown for a date range |
-| `get_account_breakdown` | — | Current balances grouped by asset type with percentages |
+Tools are auto-generated from route handlers, so every endpoint method becomes a corresponding MCP tool with the same naming.
 
 ### Connecting from Another Microservice
 
@@ -197,8 +183,8 @@ Use an MCP client in your microservice and point it to the Finance Assistant MCP
 
 Example high-level flow:
 
-1. Start Finance Assistant MCP: `python -m src.mcp.server`.
-2. Configure your microservice MCP client with the SSE URL exposed by FastMCP (commonly `/sse` on the configured host/port).
+1. Start Finance Assistant: `python3 app.py`.
+2. Configure your microservice MCP client with the MCP URL exposed by FastApiMCP on the same host/port.
 3. Connect, discover tools, and invoke them with JSON arguments.
 
 Your microservice is then the integration layer for any downstream agent or application.
