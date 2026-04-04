@@ -124,7 +124,7 @@ app.include_router(financial_data_router)
 app.include_router(financial_summary_router)
 
 mcp = FastApiMCP(app)
-mcp.mount_http()
+mcp.mount_sse()
 
 __all__ = [
     "app",

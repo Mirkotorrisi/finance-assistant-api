@@ -1,25 +1,46 @@
-# Usa un'immagine ufficiale di Python 3.13
+# Use a standard Python image
 FROM python:3.13-slim
 
-# Imposta la directory di lavoro
+# Copy the uv binary from the official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set working directory
 WORKDIR /app
 
-# Installa pipenv e le dipendenze di sistema (necessarie per psycopg2 e SpeechRecognition)
-RUN pip install --no-cache-dir pipenv && \
-    apt-get update && apt-get install -y --no-install-recommends gcc python3-dev libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
 
-# Copia i file di dipendenza
-COPY Pipfile Pipfile.lock ./
+# Copy from the cache instead of linking since it's a container
+ENV UV_LINK_MODE=copy
 
-# Installa le dipendenze direttamente nel sistema del container
-RUN pipenv install --system --deploy
+# Install system dependencies (necessary for psycopg2, speechrecognition)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copia il resto del codice
+# Install dependencies using uv
+# We bind-mount pyproject.toml and uv.lock to install dependencies without copying the whole code first
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --frozen --no-install-project --no-dev
+
+# Copy the rest of the application
 COPY . .
 
-# Esponi la porta 8080 (quella predefinita di Cloud Run)
+# Install the project itself
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+# Expose the API port (Cloud Run default or custom)
 EXPOSE 8080
 
-# Avvia FastAPI
-CMD ["python3", "app.py"]
+# Set environment variables for production
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Run FastAPI using uvicorn
+# app:app refers to the 'app' variable in the 'app.py' module
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]

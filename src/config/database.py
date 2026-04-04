@@ -15,7 +15,7 @@ class DatabaseConfig:
     DATABASE = os.getenv("DB_NAME", "defaultdb")
     USER = os.getenv("DB_USER", "avnadmin")
     PASSWORD = os.getenv("DB_PASSWORD", "")
-    SSL_MODE = os.getenv("DB_SSL_MODE", "require")
+    SSL_MODE = os.getenv("DB_SSL_MODE", "disable")
     
     @classmethod
     def get_database_url(cls) -> str:
