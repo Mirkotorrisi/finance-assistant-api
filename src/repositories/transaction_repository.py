@@ -60,3 +60,7 @@ class TransactionRepository:
         """Sum of all transactions - represents the current total balance."""
         transactions = self.session.query(Transaction).all()
         return sum(t.amount for t in transactions)
+
+    def get_distinct_categories(self) -> List[str]:
+        rows = self.session.query(Transaction.category).distinct().filter(Transaction.category.isnot(None)).order_by(Transaction.category).all()
+        return [r[0] for r in rows]

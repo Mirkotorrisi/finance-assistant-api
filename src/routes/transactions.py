@@ -118,6 +118,17 @@ async def delete_transaction(
 
 
 @router.get(
+    "/categories",
+    response_model=List[str],
+    summary="Get distinct categories",
+    response_description="Sorted list of distinct transaction category names",
+)
+async def get_distinct_categories(service: TransactionService = Depends(get_transaction_service)):
+    """Return every distinct category name present in stored transactions."""
+    return service.get_distinct_categories()
+
+
+@router.get(
     "/balance",
     response_model=BalanceResponse,
     summary="Get total balance",

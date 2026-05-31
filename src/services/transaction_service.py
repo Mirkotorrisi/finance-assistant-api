@@ -119,6 +119,10 @@ class TransactionService:
         """Get the current balance by summing all transactions."""
         return self.transaction_repo.get_total_balance()
 
+    def get_distinct_categories(self) -> List[str]:
+        """Return sorted list of distinct category names from existing transactions."""
+        return self.transaction_repo.get_distinct_categories()
+
     def _validate_account_exists(self, account_id: int) -> None:
         """Validate that an account exists.
         
