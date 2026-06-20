@@ -78,6 +78,24 @@ class Category(Base):
         }
 
 
+class MerchantRule(Base):
+    """Merchant alias rules: map description patterns to a fixed category."""
+
+    __tablename__ = "merchant_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pattern = Column(String(200), nullable=False, unique=True, index=True)
+    category = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "pattern": self.pattern,
+            "category": self.category,
+        }
+
+
 class Transaction(Base):
     """Transaction model for financial transactions.
     

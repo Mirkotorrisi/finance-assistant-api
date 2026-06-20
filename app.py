@@ -34,6 +34,7 @@ from src.routes import (
     financial_data_router,
     financial_summary_router,
     health_router,
+    merchant_rules_router,
     transactions_router,
 )
 from src.database.init import close_database, init_database
@@ -82,6 +83,13 @@ tags_metadata = [
             "spending distribution, and account breakdowns."
         ),
     },
+    {
+        "name": "merchant-rules",
+        "description": (
+            "Merchant alias rules: map description patterns to a fixed category. "
+            "Used to override LLM categorization for known merchants."
+        ),
+    },
 ]
 
 app = FastAPI(
@@ -122,6 +130,7 @@ app.include_router(transactions_router)
 app.include_router(accounts_router)
 app.include_router(financial_data_router)
 app.include_router(financial_summary_router)
+app.include_router(merchant_rules_router)
 
 mcp = FastApiMCP(app)
 mcp.mount_sse()

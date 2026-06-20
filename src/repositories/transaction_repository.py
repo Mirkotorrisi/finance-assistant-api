@@ -61,6 +61,19 @@ class TransactionRepository:
         transactions = self.session.query(Transaction).all()
         return sum(t.amount for t in transactions)
 
+    def update_category_by_pattern(self, pattern: str, category: str) -> int:
+        """Update category on all transactions whose description contains `pattern` (case-insensitive).
+        Returns the number of rows updated."""
+        rows = (
+            self.session.query(Transaction)
+            .filter(Transaction.description.ilike(f"%{pattern}%"))
+            .all()
+        )
+        for t in rows:
+            t.category = category
+        self.session.commit()
+        return len(rows)
+
     def get_distinct_categories(self) -> List[str]:
         rows = self.session.query(Transaction.category).distinct().filter(Transaction.category.isnot(None)).order_by(Transaction.category).all()
         return [r[0] for r in rows]
