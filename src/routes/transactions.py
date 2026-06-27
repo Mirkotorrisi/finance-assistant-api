@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.models.transaction import (
     BalanceResponse,
+    BulkCategoryUpdate,
     TransactionCreate,
     TransactionResponse,
     TransactionUpdate,
@@ -81,6 +82,25 @@ async def create_transactions_bulk(
 ):
     """Create multiple transactions in a single request."""
     return service.add_transactions_bulk([t.model_dump() for t in transactions])
+
+
+@router.put(
+    "/bulk-category",
+    response_model=List[TransactionResponse],
+    summary="Bulk-update transaction categories",
+    response_description="List of updated transactions",
+)
+async def bulk_update_categories(
+    payload: BulkCategoryUpdate,
+    service: TransactionService = Depends(get_transaction_service),
+):
+    """Update the category of multiple transactions in one request."""
+    results = []
+    for item in payload.updates:
+        updated = service.update_transaction(item.transaction_id, {"category": item.category})
+        if updated:
+            results.append(updated)
+    return results
 
 
 @router.put(

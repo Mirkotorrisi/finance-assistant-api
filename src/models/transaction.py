@@ -91,3 +91,16 @@ class BalanceResponse(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"balance": 2350.75}})
 
     balance: float = Field(..., description="Current total balance across all transactions.")
+
+
+class CategoryUpdateItem(BaseModel):
+    """A single transaction-to-category assignment for bulk updates."""
+
+    transaction_id: int = Field(..., description="ID of the transaction to update.")
+    category: str = Field(..., description="New category to assign.")
+
+
+class BulkCategoryUpdate(BaseModel):
+    """Payload for bulk-updating the category of multiple transactions."""
+
+    updates: list[CategoryUpdateItem] = Field(..., description="List of transaction-category assignments.")
