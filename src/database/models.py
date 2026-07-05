@@ -1,7 +1,7 @@
 """Database models using SQLAlchemy ORM."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, JSON, Text
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -75,6 +75,41 @@ class Category(Base):
             "name": self.name,
             "type": self.type,
             "color": self.color
+        }
+
+
+class UserPreferences(Base):
+    """Per-user onboarding context: focus areas, known categories, budget target.
+
+    ``user_id`` is a lightweight client-generated identifier (no auth system yet),
+    not a foreign key to a users table.
+    """
+
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), unique=True, nullable=False, index=True)
+    onboarding_completed = Column(Boolean, nullable=False, default=False)
+    focus_categories = Column(JSON, nullable=False, default=list)
+    custom_categories = Column(JSON, nullable=False, default=list)
+    budget_amount = Column(Float, nullable=True)
+    budget_period = Column(String(20), nullable=False, default="monthly")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<UserPreferences(user_id='{self.user_id}', onboarding_completed={self.onboarding_completed})>"
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "onboarding_completed": self.onboarding_completed,
+            "focus_categories": self.focus_categories or [],
+            "custom_categories": self.custom_categories or [],
+            "budget_amount": self.budget_amount,
+            "budget_period": self.budget_period,
+            "notes": self.notes,
         }
 
 

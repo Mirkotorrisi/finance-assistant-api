@@ -36,6 +36,7 @@ from src.routes import (
     health_router,
     merchant_rules_router,
     transactions_router,
+    user_preferences_router,
 )
 from src.database.init import close_database, init_database
 
@@ -90,6 +91,13 @@ tags_metadata = [
             "Used to override LLM categorization for known merchants."
         ),
     },
+    {
+        "name": "preferences",
+        "description": (
+            "Per-user onboarding preferences: focus categories, custom categories, "
+            "budget target. Keyed by a lightweight client-generated user_id (no auth system yet)."
+        ),
+    },
 ]
 
 app = FastAPI(
@@ -131,6 +139,7 @@ app.include_router(accounts_router)
 app.include_router(financial_data_router)
 app.include_router(financial_summary_router)
 app.include_router(merchant_rules_router)
+app.include_router(user_preferences_router)
 
 mcp = FastApiMCP(app)
 mcp.mount_sse()
