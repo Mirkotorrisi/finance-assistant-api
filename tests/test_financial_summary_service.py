@@ -272,17 +272,17 @@ class TestGetTopCategories:
         mock_row2.count = 1
         
         mock_query = MagicMock()
-        mock_query.filter.return_value.group_by.return_value.order_by.return_value.limit.return_value.all.return_value = [
-            mock_row1, mock_row2
-        ]
+        # the service now orders and limits in Python (spellings of one category are merged first)
+        mock_query.filter.return_value.group_by.return_value.all.return_value = [mock_row1, mock_row2]
         mock_session.query.return_value = mock_query
         
         result = financial_summary_service._get_top_categories(2024, 1, limit=5)
         
         assert len(result) == 2
-        assert result[0]["category"] == "Groceries"
-        assert result[0]["amount"] == 500.0
-        assert result[0]["count"] == 10
+        assert result[0]["category"] == "Rent" and result[0]["amount"] == 1200.0  # biggest first
+        assert result[1]["category"] == "Groceries"
+        assert result[1]["amount"] == 500.0
+        assert result[1]["count"] == 10
 
 
 class TestAccountTypeConstants:

@@ -4,7 +4,8 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, extract, case
 from datetime import datetime
-from src.database.models import Account, Transaction, Category
+from src.blueprint import Blueprint
+from src.database.models import Account, Transaction, Category, Workspace
 
 
 class FinancialSummaryService:
@@ -16,6 +17,25 @@ class FinancialSummaryService:
     
     def __init__(self, session: Session):
         self.session = session
+        self._blueprint: Optional[Blueprint] = None
+        self._blueprint_loaded = False
+
+    def _display_name(self, category: str) -> str:
+        """The blueprint's label for a stored category (key, label or alias), else the text as it is.
+
+        Transactions store the blueprint's stable key; charts should show the label, and spellings that resolve to
+        the same category should add up as one.
+        """
+        if not self._blueprint_loaded:
+            self._blueprint_loaded = True
+            workspace_id = self.session.info.get("workspace_id")
+            workspace = self.session.get(Workspace, workspace_id) if workspace_id is not None else None
+            try:
+                self._blueprint = Blueprint.model_validate(workspace.blueprint) if workspace else None
+            except ValueError:
+                self._blueprint = None
+        key = self._blueprint.resolve_category(category) if self._blueprint else None
+        return self._blueprint.nodes()[key].label if key else category
     
     def get_monthly_summary(self, month: str) -> Dict[str, Any]:
         """Get monthly financial summary for a specific month.
@@ -124,7 +144,7 @@ class FinancialSummaryService:
             for txn in transactions:
                 amount = abs(txn.amount)
                 total_amount += amount
-                key = txn.category
+                key = self._display_name(txn.category)
                 
                 if key not in distribution_dict:
                     distribution_dict[key] = {"amount": 0.0, "count": 0}
@@ -311,15 +331,15 @@ class FinancialSummaryService:
             )
         ).group_by(
             Transaction.category
-        ).order_by(
-            func.sum(func.abs(Transaction.amount)).desc()
-        ).limit(limit).all()
-        
+        ).all()
+
+        merged: Dict[str, Dict[str, float]] = {}
+        for row in result:  # spellings of one category (key, label, old name) add up
+            slot = merged.setdefault(self._display_name(row.category), {"amount": 0.0, "count": 0})
+            slot["amount"] += row.total_amount
+            slot["count"] += row.count
+        top = sorted(merged.items(), key=lambda item: -item[1]["amount"])[:limit]
         return [
-            {
-                "category": row.category,
-                "amount": round(row.total_amount, 2),
-                "count": row.count
-            }
-            for row in result
+            {"category": name, "amount": round(slot["amount"], 2), "count": int(slot["count"])}
+            for name, slot in top
         ]

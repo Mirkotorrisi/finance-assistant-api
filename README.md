@@ -20,9 +20,15 @@ We use **uv** for high-performance dependency management.
    uv run uvicorn app:app --reload --port 8080
    ```
 
+### Database
+
+SQLite by default (`~/.finance-assistant/finance.db`, or `FINANCE_DB_PATH`). Postgres is used when `DB_PASSWORD` or
+`DB_HOST` is set (or `FINANCE_DB=postgres`); the other variables are `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_SSL_MODE`.
+The schema is migrated automatically at startup (SQLite, and Postgres unless `ENVIRONMENT=production`).
+
 ### Database Migrations (Alembic)
 
-To update your local database schema:
+Run by hand for a production Postgres, after taking a dump:
 ```bash
 uv run alembic upgrade head
 ```
@@ -34,10 +40,18 @@ uv run alembic revision --autogenerate -m "description of changes"
 
 ## 🛠️ Features
 
-- **Transaction Management**: CRUD for income and expenses.
-- **Account Tracking**: Manage checking, savings, and investment accounts.
-- **Financial Summaries**: Aggregated data for net worth and monthly breakdowns.
-- **MCP Integration**: Fully compatible with the Model Context Protocol for AI Agent interaction.
+- **Projects (workspaces)**: every request works in one project, chosen with `X-Workspace-Id` (default: the caller's
+  project) and identified with `X-User-Id`. Data is isolated per project at the database session.
+- **Blueprints**: a validated, versioned document per project (category tree, groups, dimensions, rules, instructions):
+  `/api/workspaces/{id}/blueprint`, `.../preview`, `.../export`, `/api/blueprint-templates`, `/api/blueprints/validate`.
+- **Transactions and accounts**: CRUD, with provenance on every category (who decided it, confidence, confirmed or not).
+- **Imports**: `POST /api/imports` (account required) deduplicates rows against what is stored, records an undoable batch
+  and pairs transfers between the user's own accounts; `/api/transfers/*` to adjust them.
+- **Review**: `/api/review/queue|confirm|accept|coverage`, merchant rules (`/api/merchant-rules`, `/resolve`).
+- **Reports**: `/api/reports/spending` (by category, group, account or month, with `coverage`),
+  `/api/reports/category-usage`, plus the summaries used by the dashboard.
+- **MCP**: an auto-generated MCP surface is mounted at `/sse`; the agent's curated tool set lives in
+  [`../finance-mcp`](../finance-mcp).
 
 ## 🐳 Docker
 
