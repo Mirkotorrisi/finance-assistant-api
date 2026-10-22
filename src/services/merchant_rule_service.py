@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
+from src.services import merchant as merchant_lib
 from src.repositories.merchant_rule_repository import MerchantRuleRepository
 from src.repositories.transaction_repository import TransactionRepository
 from src.services.transaction_service import TransactionService
@@ -42,9 +43,12 @@ class MerchantRuleService:
         """Apply every saved rule to existing transactions. Returns total rows updated."""
         total = 0
         for rule in self.rule_repo.list():
-            total += self.tx_repo.update_category_by_pattern(rule.pattern, rule.category)
+            total += self.tx_repo.update_category_by_pattern(rule.pattern, rule.category, source="rule")
         return total
 
     def get_rules_as_list(self) -> List[Dict[str, str]]:
         """Return rules in lightweight format for use by the parser pre-check."""
         return [{"pattern": r.pattern, "category": r.category} for r in self.rule_repo.list()]
+
+    def resolve(self, descriptions: List[str]) -> List[Dict[str, Any]]:
+        return merchant_lib.resolve(descriptions, self.get_rules_as_list())

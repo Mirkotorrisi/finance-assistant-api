@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.blueprint import Blueprint
 from src.database.models import Account, Transaction, Workspace
+from src.services.coverage import coverage_of
 
 GROUP_BYS = ("category", "group", "account", "month")
 
@@ -95,6 +96,8 @@ class SpendingReportService:
             "flow": flow,
             "total": round(grand_total, 2),
             "transaction_count": len(transactions),
+            # how much of this total rests on categories the user confirmed (the rest are suggestions)
+            "coverage": coverage_of(transactions),
             "items": items,
             # groups can overlap, so their amounts may add up to more than the total
             "note": "A category in several groups counts in each of them." if group_by == "group" else None,

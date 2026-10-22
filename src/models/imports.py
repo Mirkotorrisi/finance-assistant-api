@@ -11,6 +11,11 @@ class ImportRow(BaseModel):
     description: str
     category: Optional[str] = Field(default=None, description="Defaults to 'other'.")
     currency: Optional[str] = None
+    category_source: Optional[str] = Field(
+        default=None,
+        description="Who chose the category: file (the bank's column), rule, ai, fallback or user. Default file.",
+    )
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description="Confidence of an AI-chosen category.")
 
 
 class ImportRequest(BaseModel):

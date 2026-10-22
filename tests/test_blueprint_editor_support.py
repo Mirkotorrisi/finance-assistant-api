@@ -54,7 +54,8 @@ def test_category_usage_lists_unknown_categories_first_and_skips_transfers(clien
     client.put(f"/api/transactions/{transfer['id']}", json={"is_transfer": True}, headers=headers)
 
     usage = client.get("/api/reports/category-usage", headers=headers).json()
-    assert [(u["category"], u["key"], u["transactions"]) for u in usage] == [("misc", None, 2), ("viaggi", None, 1), ("Cibo", "food", 1), ("cibo", "food", 1)]
+    # "cibo" and "Cibo" are the blueprint's "food": added transactions are stored under its stable key
+    assert [(u["category"], u["key"], u["transactions"]) for u in usage] == [("misc", None, 2), ("viaggi", None, 1), ("food", "food", 2)]
     assert next(u for u in usage if u["category"] == "misc")["net_amount"] == -10.0
 
 
@@ -85,4 +86,4 @@ def test_preview_lists_the_exact_texts_to_reassign(client):
     add(client, headers, "Cibo")
     preview = client.post(f"/api/workspaces/{ws_id}/blueprint/preview", json={"name": "P", "categories": [{"key": "food", "label": "Cibo"}]}).json()
     entry = preview["impact"]["by_category"][0]
-    assert entry["key"] == "office" and entry["transactions"] == 2 and entry["texts"] == ["Spese d'ufficio", "office"]
+    assert entry["key"] == "office" and entry["transactions"] == 2 and entry["texts"] == ["office"]  # both spellings were stored as the key

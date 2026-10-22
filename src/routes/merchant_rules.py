@@ -58,6 +58,17 @@ async def delete_rule(
     return {"message": "Rule deleted"}
 
 
+class ResolveRequest(BaseModel):
+    descriptions: List[str]
+
+
+@router.post("/resolve", response_model=List[Dict[str, Any]])
+async def resolve_merchants(body: ResolveRequest, service: MerchantRuleService = Depends(get_service)):
+    """For each description: its normalised merchant key and the category of the most specific saved rule that
+    matches it (null when none does). Rules come from confirmations in the review queue and from the blueprint."""
+    return service.resolve(body.descriptions)
+
+
 @router.post("/recategorize", response_model=Dict[str, Any])
 async def recategorize(
     body: RecategorizeRequest,

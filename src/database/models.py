@@ -214,6 +214,12 @@ class Transaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
+    # Who decided the category and how sure it is: 'user' | 'rule' | 'file' | 'ai' | 'fallback' | 'legacy'.
+    # Only decisions by the user (or a rule the user made) count as certain (reviewed).
+    category_source = Column(String(16), nullable=False, default="user")
+    confidence = Column(Float, nullable=True)
+    reviewed = Column(Boolean, nullable=False, default=False)
+    merchant_key = Column(String(120), nullable=True, index=True)
     # Import bookkeeping: identical rows share a fingerprint (account, date, amount, normalised description)
     fingerprint = Column(String(64), nullable=True, index=True)
     import_batch_id = Column(Integer, ForeignKey("import_batches.id"), nullable=True, index=True)
@@ -245,6 +251,10 @@ class Transaction(Base):
             "category": self.category,
             "description": self.description,
             "currency": self.currency,
+            "category_source": self.category_source,
+            "confidence": self.confidence,
+            "reviewed": bool(self.reviewed),
+            "merchant_key": self.merchant_key,
             "is_transfer": bool(self.is_transfer),
             "transfer_pair_id": self.transfer_pair_id,
             "import_batch_id": self.import_batch_id,

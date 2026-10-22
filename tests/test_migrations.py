@@ -112,3 +112,18 @@ def test_migrated_schema_matches_the_models(tmp_path):
     upgrade_database(fresh)
     for table in ("accounts", "transactions", "merchant_rules", "workspaces", "import_batches"):
         assert {c["name"] for c in inspect(legacy).get_columns(table)} == {c["name"] for c in inspect(fresh).get_columns(table)}, table
+
+
+def test_provenance_columns_are_added_and_backfilled(tmp_path):
+    """Existing transactions become 'legacy' and unconfirmed, with a merchant key computed from the description."""
+    from src.services.merchant import merchant_key
+
+    engine = legacy_engine(tmp_path, tracked=False)
+    upgrade_database(engine)
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT description, category_source, reviewed, confidence, merchant_key FROM transactions")).fetchall()
+    assert len(rows) == 3
+    for description, source, reviewed, confidence, key in rows:
+        assert (source, bool(reviewed), confidence) == ("legacy", False, None)
+        assert key == merchant_key(description)
+    assert "merchant_key" in {i["column_names"][0] for i in inspect(engine).get_indexes("transactions") if i["column_names"]}

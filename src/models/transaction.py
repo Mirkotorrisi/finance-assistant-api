@@ -87,6 +87,11 @@ class TransactionResponse(BaseModel):
     is_transfer: bool = Field(default=False, description="Money moved between own accounts: not spending or income.")
     transfer_pair_id: Optional[int] = Field(default=None, description="The other half of the transfer.")
     import_batch_id: Optional[int] = Field(default=None, description="The statement import that added it, if any.")
+    category_label: Optional[str] = Field(default=None, description="The blueprint's label for the category, when it knows it.")
+    category_source: str = Field(default="user", description="Who decided the category: user, rule, file, ai, fallback or legacy.")
+    confidence: Optional[float] = Field(default=None, description="Confidence of an AI-chosen category (0-1).")
+    reviewed: bool = Field(default=False, description="True once the user (or a rule they made) has confirmed the category.")
+    merchant_key: Optional[str] = Field(default=None, description="Normalised merchant identity, used to group and remember merchants.")
 
 
 class BalanceResponse(BaseModel):
@@ -102,6 +107,11 @@ class CategoryUpdateItem(BaseModel):
 
     transaction_id: int = Field(..., description="ID of the transaction to update.")
     category: str = Field(..., description="New category to assign.")
+    source: Optional[str] = Field(
+        default=None,
+        description="Who decided: 'user' (default, confirmed) or 'ai' / 'fallback' for a suggestion that still needs confirming.",
+    )
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description="Confidence of a suggestion.")
 
 
 class BulkCategoryUpdate(BaseModel):

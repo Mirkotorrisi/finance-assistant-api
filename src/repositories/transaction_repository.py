@@ -61,8 +61,9 @@ class TransactionRepository:
         transactions = self.session.query(Transaction).all()
         return sum(t.amount for t in transactions)
 
-    def update_category_by_pattern(self, pattern: str, category: str) -> int:
+    def update_category_by_pattern(self, pattern: str, category: str, source: str = "user") -> int:
         """Update category on all transactions whose description contains `pattern` (case-insensitive).
+        The change counts as a confirmed decision (``source`` 'user', or 'rule' when a saved rule is applied).
         Returns the number of rows updated."""
         rows = (
             self.session.query(Transaction)
@@ -71,6 +72,7 @@ class TransactionRepository:
         )
         for t in rows:
             t.category = category
+            t.category_source, t.reviewed, t.confidence = source, True, None
         self.session.commit()
         return len(rows)
 
@@ -79,6 +81,7 @@ class TransactionRepository:
         rows = self.session.query(Transaction).filter(Transaction.category.ilike(old)).all()
         for t in rows:
             t.category = new
+            t.category_source, t.reviewed, t.confidence = "user", True, None
         self.session.commit()
         return len(rows)
 

@@ -109,7 +109,7 @@ def test_preview_counts_the_transactions_that_would_lose_their_category(client):
     new = {"name": "P", "categories": [{"key": "food", "label": "Food"}]}  # drops "fun"
     preview = client.post(f"/api/workspaces/{ws['id']}/blueprint/preview", json=new).json()
     assert preview["impact"]["affected_transactions"] == 2
-    assert preview["impact"]["by_category"] == [{"key": "fun", "label": "Fun", "transactions": 2, "texts": ["Fun"]}]
+    assert preview["impact"]["by_category"] == [{"key": "fun", "label": "Fun", "transactions": 2, "texts": ["fun"]}]  # stored as the blueprint's key
     assert [c["key"] for c in preview["diff"]["categories"]["removed"]] == ["fun"]
     # nothing was saved
     assert client.get(f"/api/workspaces/{ws['id']}/blueprint").json()["version"] == 1

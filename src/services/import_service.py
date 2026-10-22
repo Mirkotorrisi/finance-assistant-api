@@ -8,7 +8,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.models import Account, ImportBatch, Transaction, Workspace
+from src.blueprint import Blueprint
 from src.services.fingerprint import compute_fingerprint
+from src.services.merchant import merchant_key
 
 # A transfer between own accounts shows up as an outflow on one and an inflow on the other, a few days apart.
 MAX_TRANSFER_DAY_GAP = 3
@@ -17,6 +19,9 @@ TRANSFER_HINTS = (
     "saldo carta", "carta di credito", "estratto conto carta", "transfer", "payment thank you", "credit card payment",
 )
 _IN_CHUNK = 500
+# 'user' and 'rule' decisions are confirmed; the rest are suggestions waiting for review
+SOURCES = ("file", "rule", "ai", "fallback", "user")
+CONFIRMED_SOURCES = ("user", "rule")
 
 
 class ImportRequestError(Exception):
@@ -42,12 +47,18 @@ def _parse_row(index: int, row: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"row {index}: {e!r}")
     if not description:
         raise ValueError(f"row {index}: empty description")
+    source = str(row.get("category_source") or "file")
+    if source not in SOURCES:
+        raise ValueError(f"row {index}: category_source must be one of {', '.join(SOURCES)}")
+    confidence = row.get("confidence")
     return {
         "date": day,
         "amount": amount,
         "description": description[:500],
         "category": (str(row.get("category") or "other").strip() or "other")[:100],
         "currency": (str(row.get("currency") or "EUR").strip() or "EUR")[:3].upper(),
+        "category_source": source,
+        "confidence": float(confidence) if confidence is not None else None,
     }
 
 
@@ -119,11 +130,16 @@ class ImportService:
         )
         self.session.add(batch)
         self.session.flush()
+        blueprint = self._blueprint()
         transactions = [
             Transaction(
-                account_id=account_id, date=i["date"], amount=i["amount"], category=i["category"],
+                account_id=account_id, date=i["date"], amount=i["amount"],
+                # stored under the blueprint's stable key when it knows the name
+                category=(blueprint.resolve_category(i["category"]) if blueprint else None) or i["category"],
                 description=i["description"], currency=i["currency"], fingerprint=i["fingerprint"],
-                import_batch_id=batch.id,
+                import_batch_id=batch.id, merchant_key=merchant_key(i["description"]),
+                category_source=i["category_source"], confidence=i["confidence"],
+                reviewed=i["category_source"] in CONFIRMED_SOURCES,
             )
             for i in to_add
         ]
@@ -150,6 +166,13 @@ class ImportService:
             ):
                 counts[fp] = n
         return counts
+
+    def _blueprint(self) -> Optional[Blueprint]:
+        workspace = self.session.get(Workspace, self.workspace_id)
+        try:
+            return Blueprint.model_validate(workspace.blueprint) if workspace else None
+        except ValueError:
+            return None
 
     def _detect_enabled(self) -> bool:
         workspace = self.session.get(Workspace, self.workspace_id)

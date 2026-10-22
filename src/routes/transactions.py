@@ -110,7 +110,9 @@ async def bulk_update_categories(
     """Update the category of multiple transactions in one request."""
     results = []
     for item in payload.updates:
-        updated = service.update_transaction(item.transaction_id, {"category": item.category})
+        updated = service.update_transaction(
+            item.transaction_id, {"category": item.category}, source=item.source, confidence=item.confidence
+        )
         if updated:
             results.append(updated)
     return results
