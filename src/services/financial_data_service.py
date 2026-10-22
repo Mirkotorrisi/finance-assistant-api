@@ -66,8 +66,8 @@ class FinancialDataService:
         for month in range(1, 13):
             # Income and expenses for this specific month
             result = self.session.query(
-                func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label('income'),
-                func.sum(case((Transaction.amount < 0, func.abs(Transaction.amount)), else_=0)).label('expenses')
+                func.sum(case((and_(Transaction.amount > 0, Transaction.is_transfer.is_(False)), Transaction.amount), else_=0)).label('income'),
+                func.sum(case((and_(Transaction.amount < 0, Transaction.is_transfer.is_(False)), func.abs(Transaction.amount)), else_=0)).label('expenses')
             ).filter(
                 and_(
                     extract('year', Transaction.date) == year,

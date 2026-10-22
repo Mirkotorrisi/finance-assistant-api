@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Account, Transaction, Category
+from tests.helpers import scope_session
 from src.services.transaction_service import TransactionService
 from tests.mocks.mock_data import MOCK_ACCOUNTS, MOCK_TRANSACTIONS, MOCK_CATEGORIES
 
@@ -21,6 +22,7 @@ def db_session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    scope_session(session)
     yield session
     session.close()
     Base.metadata.drop_all(engine)

@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from src.database.models import Transaction, Category, Account
 from src.repositories.transaction_repository import TransactionRepository
 from src.repositories.category_repository import CategoryRepository
+from src.services.fingerprint import compute_fingerprint
 
 class TransactionService:
     def __init__(self, session: Session):
@@ -56,7 +57,8 @@ class TransactionService:
             category=category,
             description=description,
             currency=currency or "EUR",
-            account_id=account_id
+            account_id=account_id,
+            fingerprint=self._fingerprint(account_id, transaction_date, amount, description),
         )
         
         added = self.transaction_repo.add(new_transaction)
@@ -87,7 +89,8 @@ class TransactionService:
                 category=t_data["category"],
                 description=t_data["description"],
                 currency=t_data.get("currency", "EUR"),
-                account_id=t_data.get("account_id")
+                account_id=t_data.get("account_id"),
+                fingerprint=self._fingerprint(t_data.get("account_id"), transaction_date, t_data["amount"], t_data["description"]),
             )
             transactions_to_add.append(new_transaction)
             
@@ -113,6 +116,8 @@ class TransactionService:
              updates['date'] = datetime.datetime.fromisoformat(updates['date']).date()
 
         updated = self.transaction_repo.update(transaction, updates)
+        updated.fingerprint = self._fingerprint(updated.account_id, updated.date, updated.amount, updated.description)
+        self.session.commit()
         return updated.to_dict()
 
     def get_balance(self) -> float:
@@ -122,6 +127,9 @@ class TransactionService:
     def get_distinct_categories(self) -> List[str]:
         """Return sorted list of distinct category names from existing transactions."""
         return self.transaction_repo.get_distinct_categories()
+
+    def _fingerprint(self, account_id, day, amount, description) -> str:
+        return compute_fingerprint(self.session.info.get("workspace_id"), account_id, day, amount, description)
 
     def _validate_account_exists(self, account_id: int) -> None:
         """Validate that an account exists.

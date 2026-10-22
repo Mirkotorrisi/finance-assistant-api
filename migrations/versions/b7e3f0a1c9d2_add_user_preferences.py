@@ -19,7 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Create the user_preferences table."""
+    """Create the user_preferences table (skipped when it already exists)."""
+    if 'user_preferences' in sa.inspect(op.get_bind()).get_table_names():
+        return
     op.create_table(
         'user_preferences',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),

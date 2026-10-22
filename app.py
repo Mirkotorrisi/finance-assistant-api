@@ -37,6 +37,9 @@ from src.routes import (
     merchant_rules_router,
     transactions_router,
     user_preferences_router,
+    workspaces_router,
+    imports_router,
+    reports_router,
 )
 from src.database.init import close_database, init_database
 
@@ -140,9 +143,27 @@ app.include_router(financial_data_router)
 app.include_router(financial_summary_router)
 app.include_router(merchant_rules_router)
 app.include_router(user_preferences_router)
+app.include_router(workspaces_router)
+app.include_router(imports_router)
+app.include_router(reports_router)
 
-mcp = FastApiMCP(app)
-mcp.mount_sse()
+# The auto-generated MCP inlines every schema reference and cannot cope with the blueprint's recursive schema,
+# so it is built on a twin app without the workspace routes (agents use finance-mcp for those) and mounted here.
+mcp_api = FastAPI(title=app.title, version=app.version)
+for _router in (
+    health_router,
+    transactions_router,
+    accounts_router,
+    financial_data_router,
+    financial_summary_router,
+    merchant_rules_router,
+    user_preferences_router,
+    imports_router,
+    reports_router,
+):
+    mcp_api.include_router(_router)
+mcp = FastApiMCP(mcp_api, headers=["authorization", "x-workspace-id", "x-user-id"])
+mcp.mount_sse(app)
 
 __all__ = [
     "app",

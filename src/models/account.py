@@ -48,6 +48,9 @@ class AccountUpdate(BaseModel):
 
     name: Optional[str] = Field(default=None, description="New account name.")
     type: Optional[str] = Field(default=None, description="New account type.")
+    account_type: Optional[str] = Field(
+        default=None, description="Alias of `type`, named as on account creation. `type` wins if both are sent."
+    )
     is_active: Optional[bool] = Field(default=None, description="Set account active/inactive.")
 
 

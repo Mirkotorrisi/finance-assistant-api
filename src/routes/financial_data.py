@@ -2,16 +2,17 @@
 
 from fastapi import APIRouter, Depends
 
+from src.routes.deps import resolve_workspace_id
 from src.models.financial_data import FinancialDataResponse
 from src.services.financial_data_service import FinancialDataService
 
 router = APIRouter(prefix="/api/financial-data", tags=["financial-data"])
 
 
-def get_financial_data_service():
+def get_financial_data_service(workspace_id: int = Depends(resolve_workspace_id)):
     from src.database.init import get_db_session
 
-    session = get_db_session()
+    session = get_db_session(workspace_id)
     service = FinancialDataService(session=session)
     try:
         yield service

@@ -1,10 +1,69 @@
 """Database models using SQLAlchemy ORM."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, JSON, Text
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, JSON, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+
+
+class Workspace(Base):
+    """A project: its own accounts, transactions, rules and blueprint.
+
+    ``blueprint`` is a validated document (see ``src.blueprint``) that says how this project's spending
+    is organised. ``owner_user_id`` is the lightweight client identity; NULL means unowned (legacy data).
+    """
+
+    __tablename__ = "workspaces"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    owner_user_id = Column(String(64), nullable=True, index=True)
+    blueprint = Column(JSON, nullable=False)
+    blueprint_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self, include_blueprint: bool = False):
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "owner_user_id": self.owner_user_id,
+            "blueprint_version": self.blueprint_version,
+        }
+        if include_blueprint:
+            data["blueprint"] = self.blueprint
+        return data
+
+
+class ImportBatch(Base):
+    """One uploaded statement. Lets an import be listed and undone as a whole."""
+
+    __tablename__ = "import_batches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    filename = Column(String(300), nullable=True)
+    file_hash = Column(String(64), nullable=True, index=True)
+    row_count = Column(Integer, nullable=False, default=0)
+    added_count = Column(Integer, nullable=False, default=0)
+    skipped_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "filename": self.filename,
+            "file_hash": self.file_hash,
+            "row_count": self.row_count,
+            "added_count": self.added_count,
+            "skipped_count": self.skipped_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class Account(Base):
@@ -16,6 +75,7 @@ class Account(Base):
     __tablename__ = "accounts"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
     name = Column(String(200), nullable=False)
     type = Column(String(50), nullable=False)  # checking, credit, cash, investment, etc.
     currency = Column(String(3), nullable=False, default="EUR")
@@ -117,9 +177,11 @@ class MerchantRule(Base):
     """Merchant alias rules: map description patterns to a fixed category."""
 
     __tablename__ = "merchant_rules"
+    __table_args__ = (UniqueConstraint("workspace_id", "pattern", name="uix_merchant_rules_workspace_pattern"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    pattern = Column(String(200), nullable=False, unique=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    pattern = Column(String(200), nullable=False, index=True)
     category = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -142,6 +204,7 @@ class Transaction(Base):
     __tablename__ = "transactions"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)  # Nullable for backward compatibility
     date = Column(Date, nullable=False, index=True)
     amount = Column(Float, nullable=False)  # positive = income, negative = expense
@@ -151,6 +214,13 @@ class Transaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
+    # Import bookkeeping: identical rows share a fingerprint (account, date, amount, normalised description)
+    fingerprint = Column(String(64), nullable=True, index=True)
+    import_batch_id = Column(Integer, ForeignKey("import_batches.id"), nullable=True, index=True)
+    # Money moved between the user's own accounts (incl. credit-card payments): not spending, not income
+    is_transfer = Column(Boolean, nullable=False, default=False)
+    transfer_pair_id = Column(Integer, nullable=True)
+
     # Foreign key (optional - category can be free text or reference to categories table)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     
@@ -174,5 +244,8 @@ class Transaction(Base):
             "amount": self.amount,
             "category": self.category,
             "description": self.description,
-            "currency": self.currency
+            "currency": self.currency,
+            "is_transfer": bool(self.is_transfer),
+            "transfer_pair_id": self.transfer_pair_id,
+            "import_batch_id": self.import_batch_id,
         }

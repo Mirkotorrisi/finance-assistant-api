@@ -4,6 +4,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from src.routes.deps import resolve_workspace_id
 from src.models.account import (
     AccountBalanceResponse,
     AccountCreate,
@@ -15,10 +16,10 @@ from src.services.account_service import AccountService
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
-def get_account_service():
+def get_account_service(workspace_id: int = Depends(resolve_workspace_id)):
     from src.database.init import get_db_session
 
-    session = get_db_session()
+    session = get_db_session(workspace_id)
     service = AccountService(session=session)
     try:
         yield service
@@ -90,7 +91,11 @@ async def update_account(
     service: AccountService = Depends(get_account_service),
 ):
     """Partially update an account identified by account_id."""
-    updated = service.update_account(account_id, updates.model_dump(exclude_unset=True))
+    data = updates.model_dump(exclude_unset=True)
+    account_type = data.pop("account_type", None)
+    if account_type is not None:
+        data.setdefault("type", account_type)
+    updated = service.update_account(account_id, data)
     if not updated:
         raise HTTPException(status_code=404, detail="Account not found")
     return updated

@@ -57,6 +57,7 @@ class TransactionUpdate(BaseModel):
     date: Optional[str] = Field(default=None, description="New date in YYYY-MM-DD format.")
     currency: Optional[str] = Field(default=None, description="New currency code.")
     account_id: Optional[int] = Field(default=None, description="New account ID.")
+    is_transfer: Optional[bool] = Field(default=None, description="Mark or unmark as a transfer between own accounts.")
 
 
 class TransactionResponse(BaseModel):
@@ -83,6 +84,9 @@ class TransactionResponse(BaseModel):
     description: str = Field(..., description="Description of the transaction.")
     currency: str = Field(..., description="ISO 4217 currency code.")
     account_id: Optional[int] = Field(default=None, description="Account ID associated with this transaction.")
+    is_transfer: bool = Field(default=False, description="Money moved between own accounts: not spending or income.")
+    transfer_pair_id: Optional[int] = Field(default=None, description="The other half of the transfer.")
+    import_batch_id: Optional[int] = Field(default=None, description="The statement import that added it, if any.")
 
 
 class BalanceResponse(BaseModel):

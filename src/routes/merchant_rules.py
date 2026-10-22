@@ -5,15 +5,16 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from src.routes.deps import resolve_workspace_id
 from src.services.merchant_rule_service import MerchantRuleService
 
 router = APIRouter(prefix="/api/merchant-rules", tags=["merchant-rules"])
 
 
-def get_service():
+def get_service(workspace_id: int = Depends(resolve_workspace_id)):
     from src.database.init import get_db_session
 
-    session = get_db_session()
+    session = get_db_session(workspace_id)
     service = MerchantRuleService(session=session)
     try:
         yield service

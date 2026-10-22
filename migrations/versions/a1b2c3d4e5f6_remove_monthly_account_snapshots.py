@@ -19,8 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Drop the monthly_account_snapshots table."""
-    op.drop_table('monthly_account_snapshots')
+    """Drop the monthly_account_snapshots table (absent on databases created after it was removed)."""
+    if 'monthly_account_snapshots' in sa.inspect(op.get_bind()).get_table_names():
+        op.drop_table('monthly_account_snapshots')
 
 
 def downgrade() -> None:

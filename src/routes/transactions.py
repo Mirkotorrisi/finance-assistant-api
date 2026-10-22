@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from src.routes.deps import resolve_workspace_id
 from src.models.transaction import (
     BalanceResponse,
     BulkCategoryUpdate,
@@ -16,10 +17,10 @@ from src.services.transaction_service import TransactionService
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
-def get_transaction_service():
+def get_transaction_service(workspace_id: int = Depends(resolve_workspace_id)):
     from src.database.init import get_db_session
 
-    session = get_db_session()
+    session = get_db_session(workspace_id)
     service = TransactionService(session=session)
     try:
         yield service

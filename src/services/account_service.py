@@ -1,6 +1,6 @@
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract, case, desc
+from sqlalchemy import func, extract, case, desc, and_
 from src.database.models import Account, Transaction
 from src.repositories.account_repository import AccountRepository
 
@@ -67,6 +67,7 @@ class AccountService:
             func.sum(func.abs(Transaction.amount))
         ).filter(
             Transaction.amount < 0,
+            Transaction.is_transfer.is_(False),
             extract('year', Transaction.date) == year,
             extract('month', Transaction.date) == month
         ).scalar()
@@ -76,6 +77,7 @@ class AccountService:
         """Get total income for a specific month from transactions."""
         result = self.session.query(func.sum(Transaction.amount)).filter(
             Transaction.amount > 0,
+            Transaction.is_transfer.is_(False),
             extract('year', Transaction.date) == year,
             extract('month', Transaction.date) == month
         ).scalar()
@@ -86,8 +88,8 @@ class AccountService:
         query = self.session.query(
             extract('year', Transaction.date).label('year'),
             extract('month', Transaction.date).label('month'),
-            func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label('total_income'),
-            func.sum(case((Transaction.amount < 0, func.abs(Transaction.amount)), else_=0)).label('total_expense'),
+            func.sum(case((and_(Transaction.amount > 0, Transaction.is_transfer.is_(False)), Transaction.amount), else_=0)).label('total_income'),
+            func.sum(case((and_(Transaction.amount < 0, Transaction.is_transfer.is_(False)), func.abs(Transaction.amount)), else_=0)).label('total_expense'),
             func.sum(Transaction.amount).label('net')
         )
         if account_id is not None:

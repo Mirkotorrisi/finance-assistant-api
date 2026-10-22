@@ -44,7 +44,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = DatabaseConfig.get_database_url()
+    url = DatabaseConfig.resolve_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -64,12 +64,19 @@ def run_migrations_online() -> None:
 
     """
     from sqlalchemy import create_engine
-    
-    connectable = create_engine(DatabaseConfig.get_database_url())
+
+    connection = config.attributes.get("connection")
+    if connection is not None:  # called from src.database.migrate with an open connection
+        context.configure(connection=connection, target_metadata=target_metadata, render_as_batch=True)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
+    connectable = create_engine(DatabaseConfig.resolve_url())
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata, render_as_batch=True
         )
 
         with context.begin_transaction():

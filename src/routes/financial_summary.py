@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from src.routes.deps import resolve_workspace_id
 from src.models.financial_summary import (
     AccountBreakdownDetailResponse,
     MonthlySummaryResponse,
@@ -12,10 +13,10 @@ from src.services.financial_summary_service import FinancialSummaryService
 router = APIRouter(prefix="/api/financial-summary", tags=["financial-summary"])
 
 
-def get_financial_summary_service():
+def get_financial_summary_service(workspace_id: int = Depends(resolve_workspace_id)):
     from src.database.init import get_db_session
 
-    session = get_db_session()
+    session = get_db_session(workspace_id)
     service = FinancialSummaryService(session=session)
     try:
         yield service

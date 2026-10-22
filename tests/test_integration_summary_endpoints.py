@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.database.models import Base, Account, Transaction
+from tests.helpers import scope_session
 from src.services.financial_summary_service import FinancialSummaryService
 
 
@@ -20,6 +21,7 @@ def test_get_monthly_summary():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    scope_session(session)
     
     try:
         # Create test account
@@ -77,6 +79,7 @@ def test_get_spending_distribution():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    scope_session(session)
     
     try:
         # Create test accounts
@@ -145,6 +148,7 @@ def test_get_account_breakdown():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    scope_session(session)
     
     try:
         # Create test accounts
@@ -212,6 +216,7 @@ def test_edge_cases():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    scope_session(session)
     
     try:
         service = FinancialSummaryService(session)

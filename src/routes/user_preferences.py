@@ -9,9 +9,9 @@ router = APIRouter(prefix="/api/preferences", tags=["preferences"])
 
 
 def get_preferences_service():
-    from src.database.init import get_db_session
+    from src.database.init import get_unscoped_session
 
-    session = get_db_session()
+    session = get_unscoped_session()
     service = UserPreferencesService(session=session)
     try:
         yield service

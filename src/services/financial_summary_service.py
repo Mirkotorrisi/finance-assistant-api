@@ -41,8 +41,8 @@ class FinancialSummaryService:
         
         # Get aggregated income and expenses from transactions
         result = self.session.query(
-            func.sum(case((Transaction.amount > 0, Transaction.amount), else_=0)).label('income'),
-            func.sum(case((Transaction.amount < 0, func.abs(Transaction.amount)), else_=0)).label('expenses')
+            func.sum(case((and_(Transaction.amount > 0, Transaction.is_transfer.is_(False)), Transaction.amount), else_=0)).label('income'),
+            func.sum(case((and_(Transaction.amount < 0, Transaction.is_transfer.is_(False)), func.abs(Transaction.amount)), else_=0)).label('expenses')
         ).filter(
             and_(
                 extract('year', Transaction.date) == year,
@@ -101,7 +101,8 @@ class FinancialSummaryService:
                 and_(
                     Transaction.date >= start,
                     Transaction.date <= end,
-                    Transaction.amount < 0  # Only expenses
+                    Transaction.amount < 0,  # Only expenses
+                    Transaction.is_transfer.is_(False)  # money moved between own accounts is not spending
                 )
             )
             
@@ -141,7 +142,8 @@ class FinancialSummaryService:
                 and_(
                     Transaction.date >= start,
                     Transaction.date <= end,
-                    Transaction.amount < 0  # Only expenses
+                    Transaction.amount < 0,  # Only expenses
+                    Transaction.is_transfer.is_(False)  # money moved between own accounts is not spending
                 )
             )
             
@@ -304,7 +306,8 @@ class FinancialSummaryService:
             and_(
                 extract('year', Transaction.date) == year,
                 extract('month', Transaction.date) == month,
-                Transaction.amount < 0  # Only expenses
+                Transaction.amount < 0,  # Only expenses
+                    Transaction.is_transfer.is_(False)  # money moved between own accounts is not spending
             )
         ).group_by(
             Transaction.category
