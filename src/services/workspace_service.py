@@ -3,9 +3,10 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.blueprint import Blueprint
+from src.blueprint import Blueprint, diff_blueprints
 from src.database.models import Account, ImportBatch, MerchantRule, Transaction, Workspace
 from src.database.workspaces import create_workspace
 
@@ -85,3 +86,37 @@ class WorkspaceService:
         workspace.updated_at = datetime.utcnow()
         self.session.commit()
         return {"workspace_id": workspace.id, "version": workspace.blueprint_version, "blueprint": workspace.blueprint}
+
+    def preview_blueprint(self, workspace_id: int, new: Blueprint) -> Dict[str, Any]:
+        """What saving ``new`` would change: the structural diff and how many transactions lose their category."""
+        workspace = self._get(workspace_id)
+        old = Blueprint.model_validate(workspace.blueprint)
+        diff = diff_blueprints(old, new)
+        removed = {c["key"]: c["label"] for c in diff["categories"]["removed"]}
+
+        affected: Dict[str, int] = {}
+        texts: Dict[str, List[str]] = {}
+        if removed:
+            rows = (
+                self.session.query(Transaction.category, func.count(Transaction.id))
+                .filter(Transaction.workspace_id == workspace_id)
+                .group_by(Transaction.category)
+                .all()
+            )
+            for text, count in rows:
+                key = old.resolve_category(text)
+                if key in removed:
+                    affected[key] = affected.get(key, 0) + count
+                    texts.setdefault(key, []).append(text)
+        return {
+            "workspace_id": workspace_id,
+            "current_version": workspace.blueprint_version,
+            "diff": diff,
+            "impact": {
+                "affected_transactions": sum(affected.values()),
+                "by_category": [
+                    {"key": k, "label": removed[k], "transactions": n, "texts": sorted(texts.get(k, []))}
+                    for k, n in sorted(affected.items())
+                ],
+            },
+        }

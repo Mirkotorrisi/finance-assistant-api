@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import JSONResponse
 
 from src.blueprint import Blueprint
 from src.routes.deps import resolve_workspace_id
@@ -56,6 +57,15 @@ async def get_current_blueprint(
     return _guard(lambda: service.get_blueprint(workspace_id))
 
 
+@router.post("/current/blueprint/preview", summary="Preview a blueprint change for the current workspace")
+async def preview_current_blueprint(
+    blueprint: Blueprint,
+    workspace_id: int = Depends(resolve_workspace_id),
+    service: WorkspaceService = Depends(get_workspace_service),
+):
+    return _guard(lambda: service.preview_blueprint(workspace_id, blueprint))
+
+
 @router.get("/{workspace_id}", response_model=WorkspaceResponse, summary="Get a workspace")
 async def get_workspace(workspace_id: int, service: WorkspaceService = Depends(get_workspace_service)):
     return _guard(lambda: service.get(workspace_id))
@@ -82,3 +92,17 @@ async def get_blueprint(workspace_id: int, service: WorkspaceService = Depends(g
 async def put_blueprint(workspace_id: int, blueprint: Blueprint, service: WorkspaceService = Depends(get_workspace_service)):
     """Validates the document (keys, references, depth) and bumps the blueprint version."""
     return _guard(lambda: service.set_blueprint(workspace_id, blueprint))
+
+
+@router.post("/{workspace_id}/blueprint/preview", summary="Preview a blueprint change")
+async def preview_blueprint(workspace_id: int, blueprint: Blueprint, service: WorkspaceService = Depends(get_workspace_service)):
+    """The structural diff and how many transactions would lose their category. Nothing is saved."""
+    return _guard(lambda: service.preview_blueprint(workspace_id, blueprint))
+
+
+@router.get("/{workspace_id}/blueprint/export", summary="Download the blueprint as a file")
+async def export_blueprint(workspace_id: int, service: WorkspaceService = Depends(get_workspace_service)):
+    """The blueprint document alone, ready to be imported into another project or shared."""
+    data = _guard(lambda: service.get_blueprint(workspace_id))["blueprint"]
+    filename = f"blueprint-{data.get('name', 'project')}".lower().replace(" ", "-") + ".json"
+    return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{filename}"'})

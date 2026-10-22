@@ -34,3 +34,10 @@ async def spending_report(
         return service.report(start_date, end_date, group_by, flow, account_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/category-usage", summary="Categories used by the transactions")
+async def category_usage(service: SpendingReportService = Depends(get_report_service)):
+    """Each category name found in the data, how many transactions use it and which blueprint category it maps to
+    (``key`` is null when the blueprint does not know it). Transfers are excluded."""
+    return service.category_usage()

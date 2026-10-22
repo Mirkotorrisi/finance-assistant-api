@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from src.routes.deps import resolve_workspace_id
 from src.models.transaction import (
@@ -83,6 +84,17 @@ async def create_transactions_bulk(
 ):
     """Create multiple transactions in a single request."""
     return service.add_transactions_bulk([t.model_dump() for t in transactions])
+
+
+class CategoryRemap(BaseModel):
+    from_category: str
+    to_category: str
+
+
+@router.post("/remap-category", summary="Move all transactions of a category to another")
+async def remap_category(body: CategoryRemap, service: TransactionService = Depends(get_transaction_service)):
+    """Case-insensitive on the source. Use it after removing a category from the blueprint."""
+    return service.remap_category(body.from_category, body.to_category)
 
 
 @router.put(

@@ -8,6 +8,7 @@ import datetime
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.blueprint import Blueprint
@@ -98,3 +99,24 @@ class SpendingReportService:
             # groups can overlap, so their amounts may add up to more than the total
             "note": "A category in several groups counts in each of them." if group_by == "group" else None,
         }
+
+
+    def category_usage(self) -> List[Dict[str, Any]]:
+        """Every category text found in the transactions, with the blueprint key it resolves to (None: not in it)."""
+        blueprint = self._blueprint()
+        rows = (
+            self.session.query(Transaction.category, func.count(Transaction.id), func.sum(Transaction.amount))
+            .filter(Transaction.is_transfer.is_(False))
+            .group_by(Transaction.category)
+            .all()
+        )
+        usage = [
+            {
+                "category": text,
+                "key": blueprint.resolve_category(text),
+                "transactions": count,
+                "net_amount": round(total or 0.0, 2),
+            }
+            for text, count, total in rows
+        ]
+        return sorted(usage, key=lambda u: (u["key"] is not None, -u["transactions"], u["category"]))

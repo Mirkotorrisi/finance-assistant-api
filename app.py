@@ -40,6 +40,7 @@ from src.routes import (
     workspaces_router,
     imports_router,
     reports_router,
+    blueprints_router,
 )
 from src.database.init import close_database, init_database
 
@@ -146,6 +147,7 @@ app.include_router(user_preferences_router)
 app.include_router(workspaces_router)
 app.include_router(imports_router)
 app.include_router(reports_router)
+app.include_router(blueprints_router)
 
 # The auto-generated MCP inlines every schema reference and cannot cope with the blueprint's recursive schema,
 # so it is built on a twin app without the workspace routes (agents use finance-mcp for those) and mounted here.

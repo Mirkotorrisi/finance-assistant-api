@@ -74,6 +74,14 @@ class TransactionRepository:
         self.session.commit()
         return len(rows)
 
+    def rename_category(self, old: str, new: str) -> int:
+        """Set ``new`` on every transaction whose category equals ``old`` ignoring case. Returns the row count."""
+        rows = self.session.query(Transaction).filter(Transaction.category.ilike(old)).all()
+        for t in rows:
+            t.category = new
+        self.session.commit()
+        return len(rows)
+
     def get_distinct_categories(self) -> List[str]:
         rows = self.session.query(Transaction.category).distinct().filter(Transaction.category.isnot(None)).order_by(Transaction.category).all()
         return [r[0] for r in rows]

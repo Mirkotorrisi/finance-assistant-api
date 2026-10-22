@@ -120,6 +120,12 @@ class TransactionService:
         self.session.commit()
         return updated.to_dict()
 
+    def remap_category(self, from_category: str, to_category: str) -> Dict[str, Any]:
+        """Move every transaction of a category (case-insensitive) to another one."""
+        self._ensure_category_exists(to_category)
+        changed = self.transaction_repo.rename_category(from_category, to_category)
+        return {"from": from_category, "to": to_category, "transactions_updated": changed}
+
     def get_balance(self) -> float:
         """Get the current balance by summing all transactions."""
         return self.transaction_repo.get_total_balance()

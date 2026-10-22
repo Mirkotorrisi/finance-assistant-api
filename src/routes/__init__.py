@@ -1,6 +1,7 @@
 """API route modules."""
 
 from src.routes.accounts import router as accounts_router
+from src.routes.blueprints import router as blueprints_router
 from src.routes.financial_data import router as financial_data_router
 from src.routes.financial_summary import router as financial_summary_router
 from src.routes.health import router as health_router
@@ -22,4 +23,5 @@ __all__ = [
     "workspaces_router",
     "imports_router",
     "reports_router",
+    "blueprints_router",
 ]

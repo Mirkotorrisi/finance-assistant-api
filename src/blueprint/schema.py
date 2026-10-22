@@ -38,6 +38,9 @@ class CategoryNode(BaseModel):
     label: str = Field(min_length=1, max_length=120)
     description: str = ""
     examples: List[str] = Field(default_factory=list)
+    # Other names the same category is known by in the data (old labels, bank spellings). Renaming a label
+    # in the editor keeps the old one here, so existing transactions keep resolving without being rewritten.
+    aliases: List[str] = Field(default_factory=list)
     kind: Literal["expense", "income"] = "expense"
     attributes: Dict[str, Any] = Field(default_factory=dict)  # free extension point, e.g. {"deductible": true}
     children: List["CategoryNode"] = Field(default_factory=list)
@@ -217,13 +220,13 @@ class Blueprint(BaseModel):
         return [g.key for g in self.groups if category_key in self.group_categories(g.key)]
 
     def resolve_category(self, text: str) -> Optional[str]:
-        """Category key for a free-text category name (matches key or label, ignoring case/accents)."""
+        """Category key for a free-text category name (matches key, label or alias, ignoring case/accents)."""
         wanted = slugify(text)
         nodes = self.nodes()
         if wanted in nodes:
             return wanted
         for key, node in nodes.items():
-            if slugify(node.label) == wanted:
+            if slugify(node.label) == wanted or any(slugify(alias) == wanted for alias in node.aliases):
                 return key
         return None
 
