@@ -6,6 +6,7 @@ from sqlalchemy import func, and_, extract, case
 from datetime import datetime
 from src.blueprint import Blueprint
 from src.database.models import Account, Transaction, Category, Workspace
+from src.services.investments import investment_texts, not_investment
 
 
 class FinancialSummaryService:
@@ -59,10 +60,11 @@ class FinancialSummaryService:
         except (ValueError, AttributeError):
             raise ValueError("Invalid month format. Use 'YYYY-MM' (e.g., '2024-01')")
         
-        # Get aggregated income and expenses from transactions
+        # Get aggregated income and expenses from transactions (investments are tracked apart, see InvestmentService)
+        counted = and_(Transaction.is_transfer.is_(False), not_investment(investment_texts(self.session)))
         result = self.session.query(
-            func.sum(case((and_(Transaction.amount > 0, Transaction.is_transfer.is_(False)), Transaction.amount), else_=0)).label('income'),
-            func.sum(case((and_(Transaction.amount < 0, Transaction.is_transfer.is_(False)), func.abs(Transaction.amount)), else_=0)).label('expenses')
+            func.sum(case((and_(Transaction.amount > 0, counted), Transaction.amount), else_=0)).label('income'),
+            func.sum(case((and_(Transaction.amount < 0, counted), func.abs(Transaction.amount)), else_=0)).label('expenses')
         ).filter(
             and_(
                 extract('year', Transaction.date) == year,
@@ -115,6 +117,7 @@ class FinancialSummaryService:
         if group_by not in ["category", "account"]:
             raise ValueError("group_by must be 'category' or 'account'")
         
+        not_invested = not_investment(investment_texts(self.session))  # buying securities is not spending
         if group_by == "category":
             # Query transactions for the date range (only expenses - negative amounts)
             query = self.session.query(Transaction).filter(
@@ -122,7 +125,8 @@ class FinancialSummaryService:
                     Transaction.date >= start,
                     Transaction.date <= end,
                     Transaction.amount < 0,  # Only expenses
-                    Transaction.is_transfer.is_(False)  # money moved between own accounts is not spending
+                    Transaction.is_transfer.is_(False),  # money moved between own accounts is not spending
+                    not_invested,
                 )
             )
             
@@ -163,7 +167,8 @@ class FinancialSummaryService:
                     Transaction.date >= start,
                     Transaction.date <= end,
                     Transaction.amount < 0,  # Only expenses
-                    Transaction.is_transfer.is_(False)  # money moved between own accounts is not spending
+                    Transaction.is_transfer.is_(False),  # money moved between own accounts is not spending
+                    not_invested,
                 )
             )
             
@@ -327,7 +332,8 @@ class FinancialSummaryService:
                 extract('year', Transaction.date) == year,
                 extract('month', Transaction.date) == month,
                 Transaction.amount < 0,  # Only expenses
-                    Transaction.is_transfer.is_(False)  # money moved between own accounts is not spending
+                Transaction.is_transfer.is_(False),  # money moved between own accounts is not spending
+                not_investment(investment_texts(self.session)),
             )
         ).group_by(
             Transaction.category

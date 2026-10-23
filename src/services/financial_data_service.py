@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, extract, or_, case
 from src.database.models import Account, Transaction
+from src.services.investments import investment_texts, not_investment
 
 
 class FinancialDataService:
@@ -62,12 +63,13 @@ class FinancialDataService:
     def _calculate_monthly_data(self, year: int) -> List[Dict[str, Any]]:
         """Calculate monthly aggregated data for all 12 months."""
         monthly_data = []
-        
+        counted = and_(Transaction.is_transfer.is_(False), not_investment(investment_texts(self.session)))
+
         for month in range(1, 13):
-            # Income and expenses for this specific month
+            # Income and expenses for this specific month (investments are tracked apart, see InvestmentService)
             result = self.session.query(
-                func.sum(case((and_(Transaction.amount > 0, Transaction.is_transfer.is_(False)), Transaction.amount), else_=0)).label('income'),
-                func.sum(case((and_(Transaction.amount < 0, Transaction.is_transfer.is_(False)), func.abs(Transaction.amount)), else_=0)).label('expenses')
+                func.sum(case((and_(Transaction.amount > 0, counted), Transaction.amount), else_=0)).label('income'),
+                func.sum(case((and_(Transaction.amount < 0, counted), func.abs(Transaction.amount)), else_=0)).label('expenses')
             ).filter(
                 and_(
                     extract('year', Transaction.date) == year,

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, case, desc, and_
 from src.database.models import Account, Transaction
 from src.repositories.account_repository import AccountRepository
+from src.services.investments import investment_texts, not_investment
 
 class AccountService:
     def __init__(self, session: Session):
@@ -62,12 +63,13 @@ class AccountService:
         return round(result or 0.0, 2)
 
     def get_total_expenses_for_month(self, year: int, month: int) -> float:
-        """Get total expenses for a specific month from transactions."""
+        """Get total expenses for a specific month from transactions (investments are not spending)."""
         result = self.session.query(
             func.sum(func.abs(Transaction.amount))
         ).filter(
             Transaction.amount < 0,
             Transaction.is_transfer.is_(False),
+            not_investment(investment_texts(self.session)),
             extract('year', Transaction.date) == year,
             extract('month', Transaction.date) == month
         ).scalar()
@@ -78,6 +80,7 @@ class AccountService:
         result = self.session.query(func.sum(Transaction.amount)).filter(
             Transaction.amount > 0,
             Transaction.is_transfer.is_(False),
+            not_investment(investment_texts(self.session)),
             extract('year', Transaction.date) == year,
             extract('month', Transaction.date) == month
         ).scalar()
@@ -85,11 +88,12 @@ class AccountService:
 
     def get_balance_trend(self, account_id: Optional[int] = None, num_months: int = 12) -> List[Dict[str, Any]]:
         """Get monthly aggregated balance trend from transactions."""
+        counted = and_(Transaction.is_transfer.is_(False), not_investment(investment_texts(self.session)))
         query = self.session.query(
             extract('year', Transaction.date).label('year'),
             extract('month', Transaction.date).label('month'),
-            func.sum(case((and_(Transaction.amount > 0, Transaction.is_transfer.is_(False)), Transaction.amount), else_=0)).label('total_income'),
-            func.sum(case((and_(Transaction.amount < 0, Transaction.is_transfer.is_(False)), func.abs(Transaction.amount)), else_=0)).label('total_expense'),
+            func.sum(case((and_(Transaction.amount > 0, counted), Transaction.amount), else_=0)).label('total_income'),
+            func.sum(case((and_(Transaction.amount < 0, counted), func.abs(Transaction.amount)), else_=0)).label('total_expense'),
             func.sum(Transaction.amount).label('net')
         )
         if account_id is not None:

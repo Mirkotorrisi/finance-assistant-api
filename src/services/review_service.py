@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from src.blueprint import Blueprint
 from src.database.models import Transaction, Workspace
 from src.services.coverage import coverage_of
+from src.services.investments import investment_texts, not_investment
 from src.services.merchant import UNKNOWN, merchant_key as compute_merchant_key
 from src.services.merchant_rule_service import MerchantRuleService
 
@@ -141,6 +142,7 @@ class ReviewService:
     def coverage(self, flow: str = "expense") -> Dict[str, Any]:
         rows = self.session.query(Transaction).filter(
             Transaction.is_transfer.is_(False),
+            not_investment(investment_texts(self.session)),
             Transaction.amount < 0 if flow == "expense" else Transaction.amount > 0,
         ).all()
         return coverage_of(rows)

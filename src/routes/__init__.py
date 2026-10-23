@@ -9,6 +9,7 @@ from src.routes.imports import router as imports_router
 from src.routes.merchant_rules import router as merchant_rules_router
 from src.routes.review import router as review_router
 from src.routes.reports import router as reports_router
+from src.routes.investments import router as investments_router
 from src.routes.transactions import router as transactions_router
 from src.routes.user_preferences import router as user_preferences_router
 from src.routes.workspaces import router as workspaces_router
@@ -24,6 +25,7 @@ __all__ = [
     "workspaces_router",
     "imports_router",
     "reports_router",
+    "investments_router",
     "blueprints_router",
     "review_router",
 ]

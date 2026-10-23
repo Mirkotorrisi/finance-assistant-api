@@ -1,7 +1,7 @@
 """Spending / income totals by category, blueprint group, account or month.
 
-Everything here is a plain sum over the workspace's transactions: transfers between own accounts are
-left out, and category names are mapped to the blueprint's keys so groups add up.
+Everything here is a plain sum over the workspace's transactions: transfers between own accounts and
+investments (see InvestmentService) are left out, and category names are mapped to the blueprint's keys so groups add up.
 """
 
 import datetime
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from src.blueprint import Blueprint
 from src.database.models import Account, Transaction, Workspace
 from src.services.coverage import coverage_of
+from src.services.investments import investment_texts, not_investment
 
 GROUP_BYS = ("category", "group", "account", "month")
 
@@ -49,6 +50,7 @@ class SpendingReportService:
             Transaction.date >= start,
             Transaction.date <= end,
             Transaction.is_transfer.is_(False),
+            not_investment(investment_texts(self.session)),  # securities are not spending or income
             Transaction.amount < 0 if flow == "expense" else Transaction.amount > 0,
         )
         if account_id is not None:

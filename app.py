@@ -40,6 +40,7 @@ from src.routes import (
     workspaces_router,
     imports_router,
     reports_router,
+    investments_router,
     blueprints_router,
     review_router,
 )
@@ -148,6 +149,7 @@ app.include_router(user_preferences_router)
 app.include_router(workspaces_router)
 app.include_router(imports_router)
 app.include_router(reports_router)
+app.include_router(investments_router)
 app.include_router(blueprints_router)
 app.include_router(review_router)
 
@@ -164,6 +166,7 @@ for _router in (
     user_preferences_router,
     imports_router,
     reports_router,
+    investments_router,
     review_router,
 ):
     mcp_api.include_router(_router)

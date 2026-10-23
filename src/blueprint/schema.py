@@ -41,7 +41,9 @@ class CategoryNode(BaseModel):
     # Other names the same category is known by in the data (old labels, bank spellings). Renaming a label
     # in the editor keeps the old one here, so existing transactions keep resolving without being rewritten.
     aliases: List[str] = Field(default_factory=list)
-    kind: Literal["expense", "income"] = "expense"
+    # "investment": money moved into securities. It is tracked apart (portfolio, realised result) and never counts
+    # as spending or income: buying shares is not consuming, and selling them is not earning.
+    kind: Literal["expense", "income", "investment"] = "expense"
     attributes: Dict[str, Any] = Field(default_factory=dict)  # free extension point, e.g. {"deductible": true}
     children: List["CategoryNode"] = Field(default_factory=list)
 
@@ -206,6 +208,14 @@ class Blueprint(BaseModel):
         for child in node.children:
             found |= self.descendants(child.key)
         return found
+
+    def investment_keys(self) -> Set[str]:
+        """Keys of the categories whose kind is ``investment``, and of everything below them."""
+        keys: Set[str] = set()
+        for key, node in self.nodes().items():
+            if node.kind == "investment":
+                keys |= self.descendants(key)
+        return keys
 
     def group_categories(self, group_key: str) -> Set[str]:
         group = next((g for g in self.groups if g.key == group_key), None)
