@@ -7,6 +7,7 @@ from src.routes.financial_summary import router as financial_summary_router
 from src.routes.health import router as health_router
 from src.routes.imports import router as imports_router
 from src.routes.merchant_rules import router as merchant_rules_router
+from src.routes.net_worth import router as net_worth_router
 from src.routes.review import router as review_router
 from src.routes.reports import router as reports_router
 from src.routes.investments import router as investments_router
@@ -28,4 +29,5 @@ __all__ = [
     "investments_router",
     "blueprints_router",
     "review_router",
+    "net_worth_router",
 ]

@@ -106,6 +106,38 @@ class Account(Base):
         }
 
 
+class BalanceSnapshot(Base):
+    """What an account held on a day, as observed by the user (statement, app, a monthly sheet).
+
+    Not a transaction: transactions stay the source of truth for flows. A snapshot is a checkpoint to reconcile
+    them against, and the only record of accounts with no imported transactions (cash) or whose value is not a
+    cash balance (brokerage: market value).
+    """
+
+    __tablename__ = "balance_snapshots"
+    __table_args__ = (UniqueConstraint("account_id", "date", name="uix_balance_snapshots_account_date"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    balance = Column(Float, nullable=False)
+    source = Column(String(16), nullable=False, default="user")  # user | import
+    note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "date": self.date.isoformat() if self.date else None,
+            "balance": self.balance,
+            "source": self.source,
+            "note": self.note,
+        }
+
+
 class Category(Base):
     """Category model for transaction categories."""
     

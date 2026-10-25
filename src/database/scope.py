@@ -8,9 +8,9 @@ accounts/transactions/rules therefore cannot reach another project's data, even 
 from sqlalchemy import event
 from sqlalchemy.orm import Session, with_loader_criteria
 
-from src.database.models import Account, ImportBatch, MerchantRule, Transaction
+from src.database.models import Account, BalanceSnapshot, ImportBatch, MerchantRule, Transaction
 
-SCOPED_MODELS = (Account, Transaction, MerchantRule, ImportBatch)
+SCOPED_MODELS = (Account, Transaction, MerchantRule, ImportBatch, BalanceSnapshot)
 
 
 @event.listens_for(Session, "do_orm_execute")
