@@ -25,12 +25,13 @@ _EPS = 1e-6
 _ISIN = r"[A-Z]{2}[A-Z0-9]{9}[0-9]"
 _ISIN_RE = re.compile(rf"\b({_ISIN})\b")
 _QTY_RE = re.compile(r"quantity:\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNORECASE)
+_PRICE_RE = re.compile(r",?\s*price:\s*[0-9]+(?:[.,][0-9]+)?", re.IGNORECASE)
 _DIVIDEND_RE = re.compile(r"dividend|dividendo|cedola|coupon|interest payment|interessi su titoli", re.IGNORECASE)
 _SELL_RE = re.compile(r"\b(sell|vendita|venduto|rimborso)\b", re.IGNORECASE)
 _BUY_RE = re.compile(r"\b(buy|acquisto|savings plan|piano di accumulo)\b", re.IGNORECASE)
 # wording the bank puts before the instrument name
 _LEAD_RE = re.compile(
-    r"^(commercio\s+|rendimento\s+)?(buy trade|sell trade|savings plan execution|cash\s+dividend\s+for\s+isin|"
+    r"^(commercio\s+|rendimento\s+)?(buy trade|sell trade|savings plan execution|cash\s+dividend(?:\s+for\s+isin)?|"
     r"interest\s+payment\s+for\s+isin|acquisto|vendita|to)\s+",
     re.IGNORECASE,
 )
@@ -80,7 +81,7 @@ class Trade:
 
 def _name_of(description: str, isin: Optional[str]) -> str:
     text = _LEAD_RE.sub("", description.strip())
-    text = _QTY_RE.sub("", text).strip(" ,;-")
+    text = _PRICE_RE.sub("", _QTY_RE.sub("", text)).strip(" ,;-")
     if isin:
         text = text.replace(isin, "").strip(" ,;-")
     return re.sub(r"\s+", " ", text)

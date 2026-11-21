@@ -61,6 +61,13 @@ async def resolve_suspect(transaction_id: int, body: ResolveSuspectRequest, serv
     return _guard(lambda: service.resolve_suspect(transaction_id, body.action))
 
 
+@router.post("/api/imports/absorb-mute", summary="Drop mute bank rows that duplicate statement rows")
+async def absorb_mute(account_id: int, service: ImportService = Depends(get_import_service)):
+    """For banks whose API gives amount and date only (Trade Republic): the placeholder rows that match a statement
+    row already stored are removed; the ones the statements do not cover yet stay."""
+    return _guard(lambda: service.absorb_mute_rows(account_id))
+
+
 @router.get("/api/imports", summary="List imports")
 async def list_imports(service: ImportService = Depends(get_import_service)) -> List[Dict[str, Any]]:
     return service.list_batches()

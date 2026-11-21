@@ -200,3 +200,65 @@ def test_bulk_resolve_settles_same_day_pairs_only(client, project):
     kept = [t for t in client.get("/api/transactions", headers=headers).json() if t["description"] == "PAGAMENTO POS ESSELUNGA"]
     assert kept[0]["external_id"] == "B1"  # the statement row inherited the bank's reference
     assert client.post("/api/imports/suspects/resolve-bulk", json={"action": "nope"}, headers=headers).status_code == 400
+
+
+# ── mute bank rows (amount and date only) and the statements that give them words ─────────────────
+
+
+def test_mute_bank_rows_are_dropped_when_a_statement_row_already_exists(client, project):
+    headers, bank = project
+    client.post("/api/imports", json={"account_id": bank, "transactions": rows(
+        ("2026-11-10", -50.0, "Commercio Buy trade LU1829220216 AMUNDI, quantity: 0.1", {}),
+    )}, headers=headers)
+    synced = client.post("/api/imports", json={"account_id": bank, "source": "bank", "transactions": rows(
+        ("2026-11-11", -50.0, "Movimento Trade Republic", {"mute": True, "category": "uncategorized", "category_source": "fallback"}),   # the same PAC, value date
+        ("2026-11-20", -50.0, "Movimento Trade Republic", {"mute": True, "category": "uncategorized", "category_source": "fallback"}),   # a newer one: kept
+    )}, headers=headers).json()
+    assert synced["added_count"] == 1 and synced["absorbed_mute_rows"] == 1 and synced["suspect_duplicates"] == 0
+    stored = client.get("/api/transactions", headers=headers).json()
+    assert sorted((t["date"], t["description"][:9]) for t in stored) == [("2026-11-10", "Commercio"), ("2026-11-20", "Movimento")]
+
+
+def test_a_statement_row_takes_over_the_mute_bank_row_in_place(client, project):
+    headers, bank = project
+    synced = client.post("/api/imports", json={"account_id": bank, "source": "bank", "transactions": rows(
+        ("2026-11-20", -50.0, "Movimento Trade Republic", {"mute": True, "category": "uncategorized", "category_source": "fallback", "external_id": None}),
+    )}, headers=headers).json()
+    mute_id = synced["transactions"][0]["id"]
+    assert synced["transactions"][0]["category"] == "uncategorized"
+
+    # the next statement names it: same row, now with words, category and the statement's provenance
+    uploaded = client.post("/api/imports", json={"account_id": bank, "transactions": rows(
+        ("2026-11-19", -50.0, "Commercio Savings plan execution LU1829220216 AMUNDI, quantity: 0.1", {"category": "spesa"}),
+        ("2026-11-19", -12.0, "PAGAMENTO POS BAR", {"category": "spesa"}),
+    )}, headers=headers).json()
+    assert uploaded["added_count"] == 1 and uploaded["absorbed_mute_rows"] == 1
+    stored = {t["id"]: t for t in client.get("/api/transactions", headers=headers).json()}
+    taken = stored[mute_id]
+    assert taken["description"].startswith("Commercio Savings plan") and taken["source"] == "statement" and taken["date"] == "2026-11-19"
+    assert taken["category"] == "spesa" and len(stored) == 2
+
+    # re-uploading the same statement adds nothing
+    again = client.post("/api/imports", json={"account_id": bank, "transactions": rows(
+        ("2026-11-19", -50.0, "Commercio Savings plan execution LU1829220216 AMUNDI, quantity: 0.1", {"category": "spesa"}),
+    )}, headers=headers).json()
+    assert again["added_count"] == 0 and again["skipped_count"] == 1
+
+
+def test_one_off_absorb_removes_only_the_mute_rows_with_a_twin(client, project):
+    headers, bank = project
+    # the statement was uploaded first; then the first version of the sync added mute rows without the flag
+    client.post("/api/imports", json={"account_id": bank, "transactions": rows(
+        ("2026-11-10", -50.0, "Commercio Buy trade LU1829220216 AMUNDI, quantity: 0.1", {}),
+    )}, headers=headers)
+    client.post("/api/imports", json={"account_id": bank, "source": "bank", "transactions": rows(
+        ("2026-11-11", -50.0, "Movimento Trade Republic", {"category": "uncategorized", "category_source": "fallback"}),
+        ("2026-11-11", -50.0, "Movimento Trade Republic", {"category": "uncategorized", "category_source": "fallback"}),
+        ("2026-11-20", -7.0, "Movimento Trade Republic", {"category": "uncategorized", "category_source": "fallback"}),
+    )}, headers=headers)
+    assert len(client.get("/api/transactions", headers=headers).json()) == 4
+    done = client.post("/api/imports/absorb-mute", params={"account_id": bank}, headers=headers).json()
+    assert done == {"removed": 1, "kept": 2}  # one of the two identical mute rows had a twin; the 7 € one has none
+    left = sorted((t["date"], t["amount"], t["source"]) for t in client.get("/api/transactions", headers=headers).json())
+    assert left == [("2026-11-10", -50.0, "statement"), ("2026-11-11", -50.0, "bank"), ("2026-11-20", -7.0, "bank")]
+    assert client.get("/api/imports/suspects", headers=headers).json() == []

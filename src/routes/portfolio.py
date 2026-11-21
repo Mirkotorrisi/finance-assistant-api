@@ -1,7 +1,7 @@
 """Portfolio at market value: instruments, prices, valued positions and the valuation snapshots."""
 
 from datetime import date as Date
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -30,6 +30,23 @@ def make_alphavantage() -> AlphaVantage:
 
 def make_openfigi() -> OpenFigi:
     return OpenFigi()
+
+
+class HoldingIn(BaseModel):
+    isin: Optional[str] = Field(default=None, min_length=12, max_length=12)
+    symbol: Optional[str] = Field(default=None, max_length=40)
+    name: Optional[str] = Field(default=None, max_length=200)
+    quantity: Optional[float] = None
+    price: Optional[float] = Field(default=None, ge=0)
+    currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
+    asset_class: Optional[str] = Field(default=None, pattern="^(equity|bonds|cash|real_estate|commodities|crypto|other)$")
+    type: Optional[str] = Field(default=None, pattern="^(etf|stock|bond|fund|certificate|other)$")
+
+
+class HoldingsIn(BaseModel):
+    account_id: int
+    as_of: Optional[Date] = None
+    holdings: List[HoldingIn]
 
 
 class InstrumentUpdate(BaseModel):
@@ -63,6 +80,13 @@ async def update_instrument(instrument_id: int, body: InstrumentUpdate, service:
         return service.update_instrument(instrument_id, body.model_dump(exclude_unset=True))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/holdings", summary="Record the holdings a broker statement lists")
+async def record_holdings(body: HoldingsIn, service: PortfolioService = Depends(get_portfolio_service)):
+    """Seeds or updates the instruments (name, ISIN, class) and keeps the statement's price as their manual price,
+    used until a market close exists. Called by the gateway after reading a known broker statement."""
+    return service.record_holdings(body.account_id, body.as_of, [h.model_dump() for h in body.holdings])
 
 
 @router.post("/resolve", summary="Find price symbols for the instruments (OpenFIGI)")

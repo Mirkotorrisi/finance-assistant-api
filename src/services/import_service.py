@@ -65,6 +65,7 @@ def _parse_row(index: int, row: Dict[str, Any]) -> Dict[str, Any]:
         "category_source": source,
         "confidence": float(confidence) if confidence is not None else None,
         "external_id": (str(external_id).strip()[:128] or None) if external_id is not None else None,
+        "mute": bool(row.get("mute")),
     }
 
 
@@ -125,7 +126,18 @@ class ImportService:
             seen[item["fingerprint"]] += 1
             if seen[item["fingerprint"]] > stored.get(item["fingerprint"], 0):
                 to_add.append(item)
-        suspects = self._suspect_twins(account_id, [i for i in to_add if i["external_id"]])
+        suspects = self._suspect_twins(account_id, [i for i in to_add if source == "bank"])
+        # a mute bank row (amount and date only) that matches a stored row adds nothing: keep the stored row
+        absorbed = [i for i in to_add if i["mute"] and id(i) in suspects]
+        for item in absorbed:
+            twin = self.session.get(Transaction, suspects.pop(id(item)))
+            if twin is not None and item["external_id"] and not twin.external_id:
+                twin.external_id = item["external_id"]
+        absorbed_ids = {id(i) for i in absorbed}
+        to_add = [i for i in to_add if id(i) not in absorbed_ids]
+        # a statement row that matches a mute bank row already stored takes it over (same movement, now with words)
+        taken_over = self._absorb_into_mute(account_id, to_add) if source != "bank" else {}
+        to_add = [i for i in to_add if id(i) not in taken_over]
 
         duplicate_file = bool(
             file_hash
@@ -141,9 +153,13 @@ class ImportService:
             "duplicate_file": duplicate_file,
             "transfers_detected": 0,
             "suspect_duplicates": len(suspects),
+            "absorbed_mute_rows": len(absorbed) + len(taken_over),
             "transactions": [],
         }
+        if taken_over:
+            self.session.commit()
         if not to_add:
+            result["transactions"] = [self.session.get(Transaction, tid).to_dict() for tid in taken_over.values()]
             return result
 
         batch = ImportBatch(
@@ -174,8 +190,95 @@ class ImportService:
         for t in transactions:
             self.session.refresh(t)
         result["batch_id"] = batch.id
-        result["transactions"] = [t.to_dict() for t in transactions]
+        result["transactions"] = [t.to_dict() for t in transactions] + [self.session.get(Transaction, tid).to_dict() for tid in taken_over.values()]
         return result
+
+    def _mute_rows(self, account_id: int, first: datetime.date, last: datetime.date) -> List[Transaction]:
+        return (
+            self.session.query(Transaction)
+            .filter(
+                Transaction.account_id == account_id,
+                Transaction.source == "bank",
+                Transaction.category_source == "fallback",
+                Transaction.description.like("Movimento %"),
+                Transaction.date >= first,
+                Transaction.date <= last,
+            )
+            .order_by(Transaction.date, Transaction.id)
+            .all()
+        )
+
+    def _absorb_into_mute(self, account_id: int, items: List[Dict[str, Any]]) -> Dict[int, int]:
+        """Statement rows about to be added that match a stored mute bank row (same account and amount, within
+        SUSPECT_DAY_GAP days): the bank row is rewritten with the statement's words and category and nothing is
+        inserted. Returns {id(item): transaction id} for the rows taken over."""
+        if not items:
+            return {}
+        first = min(i["date"] for i in items) - datetime.timedelta(days=SUSPECT_DAY_GAP)
+        last = max(i["date"] for i in items) + datetime.timedelta(days=SUSPECT_DAY_GAP)
+        pool: Dict[float, List[Transaction]] = defaultdict(list)
+        for row in self._mute_rows(account_id, first, last):
+            pool[round(row.amount, 2)].append(row)
+        if not pool:
+            return {}
+        blueprint = self._blueprint()
+        out: Dict[int, int] = {}
+        for item in sorted(items, key=lambda i: i["date"]):
+            candidates = pool.get(round(item["amount"], 2)) or []
+            match = min(
+                (c for c in candidates if abs((c.date - item["date"]).days) <= SUSPECT_DAY_GAP),
+                key=lambda c: (abs((c.date - item["date"]).days), c.id),
+                default=None,
+            )
+            if match is None:
+                continue
+            candidates.remove(match)
+            match.description = item["description"]
+            match.date = item["date"]
+            match.category = (blueprint.resolve_category(item["category"]) if blueprint else None) or item["category"]
+            match.category_source = item["category_source"]
+            match.confidence = item["confidence"]
+            match.reviewed = item["category_source"] in CONFIRMED_SOURCES
+            match.merchant_key = merchant_key(item["description"])
+            match.fingerprint = item["fingerprint"]
+            match.source = "statement"
+            out[id(item)] = match.id
+        return out
+
+    def absorb_mute_rows(self, account_id: int) -> Dict[str, Any]:
+        """One-off clean-up: drop the mute bank rows of an account that duplicate a stored statement row (same
+        amount, within SUSPECT_DAY_GAP days; each statement row absorbs one). Mute rows with no twin stay: they are
+        movements the statements do not cover yet."""
+        mute = self._mute_rows(account_id, datetime.date(1900, 1, 1), datetime.date(2999, 12, 31))
+        if not mute:
+            return {"removed": 0, "kept": 0}
+        first = min(r.date for r in mute) - datetime.timedelta(days=SUSPECT_DAY_GAP)
+        last = max(r.date for r in mute) + datetime.timedelta(days=SUSPECT_DAY_GAP)
+        statements = (
+            self.session.query(Transaction)
+            .filter(Transaction.account_id == account_id, Transaction.source != "bank", Transaction.date >= first, Transaction.date <= last)
+            .all()
+        )
+        pool: Dict[float, List[Transaction]] = defaultdict(list)
+        for row in statements:
+            pool[round(row.amount, 2)].append(row)
+        removed = 0
+        for row in mute:
+            candidates = pool.get(round(row.amount, 2)) or []
+            match = min(
+                (c for c in candidates if abs((c.date - row.date).days) <= SUSPECT_DAY_GAP),
+                key=lambda c: (abs((c.date - row.date).days), c.id),
+                default=None,
+            )
+            if match is None:
+                continue
+            candidates.remove(match)
+            if row.external_id and not match.external_id:
+                match.external_id = row.external_id
+            self.session.delete(row)
+            removed += 1
+        self.session.commit()
+        return {"removed": removed, "kept": len(mute) - removed}
 
     def _stored_external_ids(self, account_id: int, external_ids: Iterable[str]) -> set:
         wanted = list(external_ids)

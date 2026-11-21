@@ -19,6 +19,10 @@ class ImportRow(BaseModel):
     external_id: Optional[str] = Field(
         default=None, max_length=128, description="The bank's own reference of the movement (bank API syncs)."
     )
+    mute: bool = Field(
+        default=False,
+        description="The bank gave amount and date only (no wording): the row is a placeholder a statement row can absorb.",
+    )
 
 
 class ImportRequest(BaseModel):
@@ -47,6 +51,7 @@ class ImportResult(BaseModel):
     duplicate_file: bool = False
     transfers_detected: int = 0
     suspect_duplicates: int = 0
+    absorbed_mute_rows: int = 0
     transactions: List[Dict[str, Any]] = []
 
 

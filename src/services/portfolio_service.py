@@ -142,6 +142,39 @@ class PortfolioService:
         self.session.commit()
         return {"resolved": sum(1 for r in report if r["symbol"]), "unresolved": sum(1 for r in report if not r["symbol"]), "instruments": report}
 
+    def record_holdings(self, account_id: int, as_of: Optional[date], holdings: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Instruments as a broker statement lists them at its date: name and ISIN, class guess, and the statement's
+        price kept as the manual price (used until a market close exists). Quantities are not stored: positions come
+        from the trades, and the statement's figure is returned next to them for a check."""
+        self.sync_instruments()
+        by_isin = {i.isin: i for i in self.session.query(Instrument).filter(Instrument.isin.isnot(None)).all()}
+        by_key = {i.key: i for i in self.session.query(Instrument).all()}
+        created = updated = 0
+        for h in holdings:
+            isin = (h.get("isin") or "").strip().upper() or None
+            name = (h.get("name") or h.get("symbol") or isin or "Strumento")[:200]
+            inst = by_isin.get(isin) if isin else by_key.get(re.sub(r"[^a-z0-9]+", " ", name.lower()).strip())
+            if inst is None:
+                inst = Instrument(key=isin or re.sub(r"[^a-z0-9]+", " ", name.lower()).strip(), isin=isin, name=name)
+                self.session.add(inst)
+                created += 1
+                if isin:
+                    by_isin[isin] = inst
+            else:
+                updated += 1
+            if h.get("type") in ("etf", "stock", "bond", "fund", "certificate", "other"):
+                inst.type = h["type"]
+            if inst.asset_class == "other" and h.get("asset_class"):
+                inst.asset_class = h["asset_class"]
+            if h.get("price") is not None:
+                inst.manual_price = float(h["price"])
+                inst.manual_price_date = as_of or date.today()
+                inst.currency = (h.get("currency") or inst.currency or "EUR")[:3]
+            if not inst.name or inst.name == inst.isin:
+                inst.name = name
+        self.session.commit()
+        return {"account_id": account_id, "as_of": as_of.isoformat() if as_of else None, "instruments_created": created, "instruments_updated": updated, "holdings": len(holdings)}
+
     # ------------------------------------------------------------------ prices
 
     def _last_price(self, inst: Instrument, upto: Optional[date] = None) -> Optional[Price]:
@@ -284,12 +317,20 @@ class PortfolioService:
             value_known = sum(v["value"] for v in valued if v["value"] is not None)
             unknown = [v for v in valued if v["value"] is None]
             unknown_total += len(unknown)
+            # an investment account that is its own securities account also holds cash: the sum of its movements
+            cash = 0.0
+            if target_id == account_id and source is not None:
+                flows = NetWorthService(self.session)._flows().get(account_id)
+                cash = round(flows.upto(today), 2) if flows else 0.0
+            if not valued and not cash:
+                continue
             groups.append({
                 "source_account_id": account_id,
                 "source_account": source.name if source else None,
                 "securities_account_id": target_id,
                 "securities_account": accounts[target_id].name if target_id in accounts else None,
-                "value": round(value_known, 2),
+                "cash": cash,
+                "value": round(value_known + cash, 2),
                 "open_cost": round(sum(v["open_cost"] for v in valued), 2),
                 "unrealized": round(sum(v["unrealized"] for v in valued if v["unrealized"] is not None), 2),
                 "unknown_positions": len(unknown),
@@ -301,6 +342,8 @@ class PortfolioService:
             for v in g["positions"]:
                 if v["value"]:
                     allocation[v["asset_class"]] = allocation.get(v["asset_class"], 0.0) + v["value"]
+            if g.get("cash"):
+                allocation["cash"] = allocation.get("cash", 0.0) + g["cash"]
         return {
             "as_of": today.isoformat(),
             "total_value": round(total, 2),
@@ -338,6 +381,13 @@ class PortfolioService:
             out["unrealized"] = round(value - pos["open_cost"], 2)
             return out
         last = self._last_price(inst, today)
+        if last is None and qty and inst.manual_price is not None:
+            # no market close yet: the price the broker's statement carried (or the user typed) is better than nothing
+            value = qty * inst.manual_price
+            out.update(value=round(value, 2), unrealized=round(value - pos["open_cost"], 2), price=inst.manual_price,
+                       price_date=inst.manual_price_date.isoformat() if inst.manual_price_date else None,
+                       price_currency=inst.currency, price_basis="manual")
+            return out
         if last is None or not qty:
             out["price_basis"] = "no_price" if last is None else "no_quantity"
             return out
@@ -362,18 +412,26 @@ class PortfolioService:
         overview = self.valued_positions(today)
         net_worth = NetWorthService(self.session)
         written, skipped = [], []
+        # several cash accounts may feed one securities account: one snapshot per target, summed
+        per_target: Dict[int, Dict[str, Any]] = {}
         for g in overview["accounts"]:
             target = g["securities_account_id"]
             if target is None:
                 skipped.append({"source_account_id": g["source_account_id"], "reason": "no securities account configured"})
                 continue
-            if g["value"] <= 0 and g["unknown_positions"]:
-                skipped.append({"source_account_id": g["source_account_id"], "reason": "nothing could be valued"})
+            slot = per_target.setdefault(target, {"value": 0.0, "unknown": 0, "valued": 0})
+            slot["value"] += g["value"]
+            slot["unknown"] += g["unknown_positions"]
+            slot["valued"] += sum(1 for v in g["positions"] if v["value"] is not None) + (1 if g.get("cash") else 0)
+        for target, slot in per_target.items():
+            if slot["valued"] == 0:
+                skipped.append({"securities_account_id": target, "reason": "nothing could be valued"})
                 continue
             existing = self.session.query(BalanceSnapshot).filter(BalanceSnapshot.account_id == target, BalanceSnapshot.date == today).first()
             if existing is not None and existing.source in SNAPSHOT_SOURCES_THAT_WIN:
                 skipped.append({"securities_account_id": target, "reason": f"a {existing.source} balance exists for today"})
                 continue
-            net_worth.upsert(target, today, g["value"], note=None, source="market")
-            written.append({"securities_account_id": target, "value": g["value"], "unknown_positions": g["unknown_positions"]})
+            value = round(slot["value"], 2)
+            net_worth.upsert(target, today, value, note=None, source="market")
+            written.append({"securities_account_id": target, "value": value, "unknown_positions": slot["unknown"]})
         return {"as_of": today.isoformat(), "written": written, "skipped": skipped}

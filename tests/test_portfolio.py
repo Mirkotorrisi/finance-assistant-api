@@ -212,3 +212,58 @@ def test_alphavantage_client_maps_rate_limits(market):
     market.limit_after = 0
     with pytest.raises(RateLimited):
         av.daily("LYY0.DEX")
+
+
+def test_parse_trade_reads_broker_statement_wording():
+    buy = parse_trade("Buy trade IE00BM67HV82 XDWI Xtrackers MSCI World Industrials UCITS ETF (Acc), quantity: 2.42477636, price: 73.78", -178.9, TODAY)
+    assert buy.kind == "buy" and buy.isin == "IE00BM67HV82" and buy.quantity == 2.42477636
+    assert buy.name == "XDWI Xtrackers MSCI World Industrials UCITS ETF (Acc)"
+    sell = parse_trade("Sell trade IS3Q, quantity: 9.57492113, price: 68.01", 651.19, TODAY)
+    assert sell.kind == "sell" and sell.key == "is3q" and sell.name == "IS3Q"
+    assert parse_trade("Cash Dividend IUSU", 6.37, TODAY).key == "iusu"
+
+
+def test_statement_holdings_seed_instruments_and_value_positions_until_a_close_exists(client, market):
+    ws = client.post("/api/workspaces", json={"name": "R", "blueprint": BLUEPRINT}).json()
+    headers = {"X-Workspace-Id": str(ws["id"])}
+    robo = client.post("/api/accounts", json={"name": "Revolut investimenti", "account_type": "investment"}, headers=headers).json()["id"]
+    rows = [
+        {"date": "2026-11-10", "amount": 200.0, "description": "Revolut investimenti: versamento", "category": "spesa"},
+        {"date": "2026-11-10", "amount": -178.9, "description": "Buy trade IE00BM67HV82 XDWI Xtrackers MSCI World Industrials UCITS ETF (Acc), quantity: 2.42477636, price: 73.78", "category": "investimenti"},
+        {"date": "2026-11-16", "amount": -3.78, "description": "Revolut investimenti: robo management fee", "category": "spesa"},
+    ]
+    assert client.post("/api/imports", json={"account_id": robo, "transactions": rows}, headers=headers).status_code == 200
+    seeded = client.post("/api/portfolio/holdings", json={"account_id": robo, "as_of": "2026-11-21", "holdings": [
+        {"symbol": "XDWI", "name": "Xtrackers MSCI World Industrials UCITS ETF (Acc)", "isin": "IE00BM67HV82", "quantity": 2.42477636, "price": 69.70, "currency": "EUR", "asset_class": "equity", "type": "etf"},
+    ]}, headers=headers).json()
+    assert seeded["instruments_created"] + seeded["instruments_updated"] == 1
+    inst = next(i for i in client.get("/api/portfolio/instruments", headers=headers).json() if i["isin"] == "IE00BM67HV82")
+    assert inst["manual_price"] == 69.7 and inst["manual_price_date"] == "2026-11-21" and inst["valuation"] == "market" and inst["type"] == "etf"
+
+    portfolio = client.get("/api/portfolio", headers=headers).json()
+    group = portfolio["accounts"][0]
+    assert group["securities_account_id"] == robo  # an investment account is its own securities account
+    pos = group["positions"][0]
+    assert pos["price_basis"] == "manual" and pos["value"] == round(2.42477636 * 69.7, 2) and pos["price_date"] == "2026-11-21"
+    assert group["cash"] == round(200.0 - 178.9 - 3.78, 2)  # the money sitting in the account counts too
+    assert group["value"] == round(pos["value"] + group["cash"], 2)
+    classes = {a["asset_class"]: a["value"] for a in portfolio["allocation"]}
+    assert classes["cash"] == group["cash"]
+
+    written = client.post("/api/portfolio/valuations", headers=headers).json()
+    assert written["written"] == [{"securities_account_id": robo, "value": group["value"], "unknown_positions": 0}]
+
+
+def test_two_cash_accounts_feeding_one_securities_account_write_one_summed_snapshot(client, market):
+    ws = client.post("/api/workspaces", json={"name": "S", "blueprint": BLUEPRINT}).json()
+    headers = {"X-Workspace-Id": str(ws["id"])}
+    a = client.post("/api/accounts", json={"name": "Cash A", "account_type": "checking"}, headers=headers).json()["id"]
+    b = client.post("/api/accounts", json={"name": "Cash B", "account_type": "checking"}, headers=headers).json()["id"]
+    titoli = client.post("/api/accounts", json={"name": "Titoli", "account_type": "investment"}, headers=headers).json()["id"]
+    for acc in (a, b):
+        client.put(f"/api/accounts/{acc}", json={"securities_account_id": titoli}, headers=headers)
+        client.post("/api/imports", json={"account_id": acc, "transactions": [
+            {"date": "2026-10-01", "amount": -5000.0, "description": "Acquisto Deutsche Managed Euro Fund II", "category": "investimenti"},
+        ]}, headers=headers)
+    written = client.post("/api/portfolio/valuations", headers=headers).json()
+    assert written["written"] == [{"securities_account_id": titoli, "value": 10000.0, "unknown_positions": 0}]
