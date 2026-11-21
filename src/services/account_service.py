@@ -16,9 +16,17 @@ class AccountService:
     # --- Account Operations ---
 
     def create_account(self, name: str, account_type: str, currency: str = "EUR", is_active: bool = True, current_balance: float = 0.0) -> dict[str, Any]:
-        account = Account(name=name, type=account_type, currency=currency, is_active=is_active, current_balance=current_balance)
+        """``current_balance`` is what the account holds today: recorded as its first balance snapshot (the stored
+        ``Account.current_balance`` column is legacy and never read)."""
+        from datetime import date
+
+        from src.services.net_worth_service import NetWorthService
+
+        account = Account(name=name, type=account_type, currency=currency, is_active=is_active, current_balance=0.0)
         created = self.account_repo.create(account)
-        return created.to_dict()
+        if current_balance:
+            NetWorthService(self.session).upsert(created.id, date.today(), current_balance, note="Saldo iniziale", source="user")
+        return self._with_balances([created])[0]
 
     def _with_balances(self, accounts: list[Account]) -> list[dict[str, Any]]:
         """Account dicts whose ``current_balance`` is what the account holds today (recorded balance plus the

@@ -78,9 +78,8 @@ class TestFinancialDataService:
         """Test that service has all required methods."""
         assert hasattr(financial_service, 'get_financial_data')
         assert callable(financial_service.get_financial_data)
-        assert hasattr(financial_service, '_calculate_monthly_data')
-        assert hasattr(financial_service, '_calculate_account_breakdown')
-        assert hasattr(financial_service, '_calculate_current_net_worth')
+        assert hasattr(financial_service, '_monthly_flows')
+        assert hasattr(financial_service, '_breakdown')
         assert hasattr(financial_service, '_calculate_net_savings')
 
 

@@ -12,12 +12,13 @@ class DatabaseConfig:
     """Database configuration settings."""
     
     # Connection details - can be overridden via environment variables
-    HOST = os.getenv("DB_HOST", "ai-financial-assistant-bollette.e.aivencloud.com")
-    PORT = int(os.getenv("DB_PORT", "22782"))
-    DATABASE = os.getenv("DB_NAME", "defaultdb")
-    USER = os.getenv("DB_USER", "avnadmin")
+    HOST = os.getenv("DB_HOST", "localhost")
+    PORT = int(os.getenv("DB_PORT", "5432"))
+    DATABASE = os.getenv("DB_NAME", "finance")
+    USER = os.getenv("DB_USER", "postgres")
     PASSWORD = os.getenv("DB_PASSWORD", "")
-    SSL_MODE = os.getenv("DB_SSL_MODE", "disable")
+    # TLS unless explicitly disabled (Docker Compose does, for its private network)
+    SSL_MODE = os.getenv("DB_SSL_MODE", "require")
     
     @classmethod
     def mode(cls) -> str:

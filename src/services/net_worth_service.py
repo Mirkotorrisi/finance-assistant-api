@@ -82,6 +82,7 @@ class _Flows:
 class NetWorthService:
     def __init__(self, session: Session):
         self.session = session
+        self._flows_cache: dict[int, _Flows] | None = None
 
     # ------------------------------------------------------------------ helpers
 
@@ -89,13 +90,20 @@ class NetWorthService:
         return self.session.query(Account).filter(Account.id == account_id).first()
 
     def _flows(self) -> dict[int, _Flows]:
-        rows: dict[int, list[tuple[date, float]]] = {}
-        query = self.session.query(Transaction.account_id, Transaction.date, Transaction.amount).filter(
-            Transaction.account_id.isnot(None)
-        )
-        for account_id, day, amount in query:
-            rows.setdefault(account_id, []).append((day, amount))
-        return {account_id: _Flows(r) for account_id, r in rows.items()}
+        """Every account's dated amounts, loaded once per service instance (several methods need them for the same
+        request); ``_invalidate`` after a write."""
+        if self._flows_cache is None:
+            rows: dict[int, list[tuple[date, float]]] = {}
+            query = self.session.query(Transaction.account_id, Transaction.date, Transaction.amount).filter(
+                Transaction.account_id.isnot(None)
+            )
+            for account_id, day, amount in query:
+                rows.setdefault(account_id, []).append((day, amount))
+            self._flows_cache = {account_id: _Flows(r) for account_id, r in rows.items()}
+        return self._flows_cache
+
+    def _invalidate(self) -> None:
+        self._flows_cache = None
 
     def _snapshots(self, account_id: int | None = None) -> dict[int, list[BalanceSnapshot]]:
         query = self.session.query(BalanceSnapshot)
@@ -219,6 +227,7 @@ class NetWorthService:
         )
         self.session.add(transaction)
         self.session.commit()
+        self._invalidate()
         self.session.refresh(transaction)
         return transaction.to_dict()
 
@@ -229,6 +238,9 @@ class NetWorthService:
         after = [s for s in snaps if s.date > day]
         if is_valuation(account):
             if not before:
+                # never valued: the cash put in is the best figure there is (same rule as current_balances)
+                if flows and flows.days[0] <= day:
+                    return {"balance": round(flows.upto(day), 2), "basis": "transactions"}
                 return {"balance": None, "basis": "none"}
             latest = before[-1]
             same_month = (latest.date.year, latest.date.month) == (day.year, day.month)

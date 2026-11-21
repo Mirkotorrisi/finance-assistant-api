@@ -303,6 +303,7 @@ class PortfolioService:
         self.sync_instruments()
         instruments = {i.key: i for i in self.session.query(Instrument).all()}
         accounts = {a.id: a for a in self.session.query(Account).all()}
+        net_worth = NetWorthService(self.session)  # loads the transactions once for every account below
         groups = []
         unknown_total = 0
         for account_id, positions in self.investments.positions_by_account().items():
@@ -320,7 +321,7 @@ class PortfolioService:
             # an investment account that is its own securities account also holds cash: the sum of its movements
             cash = 0.0
             if target_id == account_id and source is not None:
-                flows = NetWorthService(self.session)._flows().get(account_id)
+                flows = net_worth._flows().get(account_id)
                 cash = round(flows.upto(today), 2) if flows else 0.0
             if not valued and not cash:
                 continue

@@ -103,7 +103,8 @@ class TestCreateAccount:
         assert result["is_active"] is False
 
     def test_create_account_with_initial_balance(self, account_service, mock_account_repo):
-        """Initial balance is forwarded to the repo model."""
+        """The legacy column is never written: the initial balance becomes the account's first balance snapshot
+        (see test_current_balances.py)."""
         mock_acc = _make_account_mock(current_balance=500.0)
         mock_account_repo.create.return_value = mock_acc
 
@@ -114,7 +115,7 @@ class TestCreateAccount:
         )
 
         created_acc = mock_account_repo.create.call_args[0][0]
-        assert created_acc.current_balance == 500.0
+        assert created_acc.current_balance == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -131,6 +131,4 @@ def get_account_balance(
     account = service.get_account(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-
-    balance = service.get_account_balance(account_id)
-    return {"account_id": account_id, "balance": balance}
+    return {"account_id": account_id, "balance": account["current_balance"]}  # the same figure the account list shows

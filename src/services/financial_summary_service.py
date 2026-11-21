@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from src.blueprint import Blueprint
 from src.database.models import Account, Transaction, Workspace
 from src.services.investments import investment_texts, not_investment
+from src.services.net_worth_service import VALUATION_TYPES
 
 
 class FinancialSummaryService:
@@ -16,7 +17,7 @@ class FinancialSummaryService:
     
     # Account type categorization
     LIQUIDITY_TYPES = {"checking", "savings", "cash"}
-    INVESTMENT_TYPES = {"investment", "brokerage", "retirement"}
+    INVESTMENT_TYPES = VALUATION_TYPES  # the accounts net worth counts as "invested"
     
     def __init__(self, session: Session):
         self.session = session

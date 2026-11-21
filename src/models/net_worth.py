@@ -1,7 +1,7 @@
 """Pydantic models for balance snapshots and the net-worth endpoints."""
 
 from datetime import date as Date
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,9 @@ class SnapshotCreate(BaseModel):
 
 class SnapshotBulk(BaseModel):
     snapshots: List[SnapshotCreate]
-    source: str = Field(default="import", description="'import' for a sheet or file, 'user' for typed values.")
+    source: Literal["import", "user", "bank"] = Field(
+        default="import", description="'import' for a sheet or file, 'user' for typed values, 'bank' for a bank sync."
+    )
 
 
 class FlowCheckRow(BaseModel):

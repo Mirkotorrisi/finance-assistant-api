@@ -68,3 +68,18 @@ def test_an_older_recorded_balance_is_rolled_forward_with_the_transactions(clien
     headers, bank, _ = project
     client.post("/api/balance-snapshots", json={"account_id": bank, "date": "2026-11-01", "balance": 10000.0}, headers=headers)
     assert client.get(f"/api/accounts/{bank}/balance", headers=headers).json()["balance"] == 10000.0 + 2000.0 - 300.0 - 50.0
+
+
+def test_an_initial_balance_becomes_the_first_snapshot(client):
+    """create_account(current_balance=1500) must show 1500, not 0: it is recorded as a baseline snapshot."""
+    acc = client.post("/api/accounts", json={"name": "Funded", "account_type": "savings", "current_balance": 1500}).json()
+    assert acc["current_balance"] == 1500 and acc["balance_basis"] == "snapshot"
+    # a movement on the snapshot's own day is taken as already inside the recorded balance: the next day's is not
+    from datetime import date, timedelta
+
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    client.post("/api/transactions", json={"amount": -100, "category": "x", "description": "t", "account_id": acc["id"], "date": tomorrow})
+    listed = {a["id"]: a for a in client.get("/api/accounts").json()}
+    assert listed[acc["id"]]["current_balance"] == 1400
+    snaps = client.get("/api/balance-snapshots", params={"account_id": acc["id"]}).json()["snapshots"]
+    assert len(snaps) == 1 and snaps[0]["balance"] == 1500 and snaps[0]["source"] == "user"
