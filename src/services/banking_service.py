@@ -7,11 +7,12 @@ The secret that grants access (the aggregator's session id) lives in the gateway
 from __future__ import annotations
 
 import builtins
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from src.clock import to_naive_utc, utc_now
 from src.database.models import Account, BankAccountLink, BankConnection
 
 STATUSES = ("active", "expired", "revoked", "error")
@@ -45,7 +46,7 @@ class BankingService:
             row.valid_until = data.get("valid_until")
             row.status = "active"
             row.last_error = None
-            row.updated_at = datetime.utcnow()
+            row.updated_at = utc_now()
             by_hash = {link.identification_hash: link for link in row.links}
             for item in accounts:
                 link = by_hash.get(item["identification_hash"])
@@ -79,7 +80,7 @@ class BankingService:
         link.label = item.get("label")
         link.currency = (item.get("currency") or None)
         link.cash_account_type = item.get("cash_account_type")
-        link.updated_at = datetime.utcnow()
+        link.updated_at = utc_now()
 
     def update(self, connection_id: int, changes: dict[str, Any]) -> dict[str, Any]:
         row = self.get(connection_id)
@@ -88,7 +89,7 @@ class BankingService:
                 setattr(row, field, changes[field])
         if row.status not in STATUSES:
             raise ValueError(f"status must be one of {', '.join(STATUSES)}")
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now()
         self.session.commit()
         return row.to_dict()
 
@@ -127,7 +128,7 @@ class BankingService:
         for field in ("enabled", "last_transaction_date", "last_balance", "last_balance_date"):
             if changes.get(field) is not None:
                 setattr(link, field, changes[field])
-        link.updated_at = datetime.utcnow()
+        link.updated_at = utc_now()
         self.session.commit()
         return link.to_dict()
 
@@ -137,7 +138,7 @@ class BankingService:
     def due(session: Session, max_age_hours: float = 12) -> builtins.list[dict[str, Any]]:
         """Across every workspace (unscoped session): active connections not synced in the last ``max_age_hours``.
         Used by the gateway's scheduler, which syncs them one by one."""
-        cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+        cutoff = utc_now() - timedelta(hours=max_age_hours)
         rows = (
             session.query(BankConnection)
             .filter(BankConnection.status == "active")
@@ -149,7 +150,7 @@ class BankingService:
 
     @staticmethod
     def expiring(session: Session, within_days: int = 14) -> builtins.list[dict[str, Any]]:
-        limit = datetime.utcnow() + timedelta(days=within_days)
+        limit = utc_now() + timedelta(days=within_days)
         rows = (
             session.query(BankConnection)
             .filter(BankConnection.status == "active", BankConnection.valid_until.isnot(None), BankConnection.valid_until <= limit)

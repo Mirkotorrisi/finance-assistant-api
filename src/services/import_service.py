@@ -158,9 +158,9 @@ class ImportService:
             "absorbed_mute_rows": len(absorbed) + len(taken_over),
             "transactions": [],
         }
-        if taken_over:
-            self.session.commit()
         if not to_add:
+            if taken_over or absorbed:
+                self.session.commit()
             result["transactions"] = [self.session.get(Transaction, tid).to_dict() for tid in taken_over.values()]
             return result
 
@@ -456,11 +456,20 @@ class ImportService:
         ``include_unhinted`` also returns keyword-less pairs (use with ``dry_run`` to suggest them to the user).
         ``only_ids`` keeps the pairs that involve at least one of those transactions.
         """
-        rows = (
-            self.session.query(Transaction)
-            .filter(Transaction.is_transfer.is_(False), Transaction.account_id.isnot(None))
-            .all()
-        )
+        query = self.session.query(Transaction).filter(Transaction.is_transfer.is_(False), Transaction.account_id.isnot(None))
+        if only_ids is not None:
+            # a pair needs a counterpart within MAX_TRANSFER_DAY_GAP days, and its uniqueness check looks another gap
+            # away: anything outside that window around the new rows cannot change the outcome, so it is not loaded
+            span = (
+                self.session.query(func.min(Transaction.date), func.max(Transaction.date))
+                .filter(Transaction.id.in_(only_ids))
+                .one()
+            )
+            if span[0] is None:
+                return []
+            margin = datetime.timedelta(days=2 * MAX_TRANSFER_DAY_GAP)
+            query = query.filter(Transaction.date >= span[0] - margin, Transaction.date <= span[1] + margin)
+        rows = query.all()
         outs = [t for t in rows if t.amount < 0]
         ins_by_cents: Dict[int, List[Transaction]] = defaultdict(list)
         for t in rows:

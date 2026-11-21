@@ -82,25 +82,12 @@ class TestGetSpendingDistribution:
     """Tests for get_spending_distribution method."""
     
     def test_valid_date_range_category_grouping(self, financial_summary_service, mock_session):
-        """Test with valid date range and category grouping."""
-        # Mock transactions
-        txn1 = Mock()
-        txn1.amount = -100.0
-        txn1.category = "Groceries"
-        txn1.account_id = 1
-        
-        txn2 = Mock()
-        txn2.amount = -200.0
-        txn2.category = "Groceries"
-        txn2.account_id = 1
-        
-        txn3 = Mock()
-        txn3.amount = -150.0
-        txn3.category = "Transportation"
-        txn3.account_id = 2
-        
+        """The database groups by category; the service only orders and computes the shares."""
         mock_query = MagicMock()
-        mock_query.filter.return_value.all.return_value = [txn1, txn2, txn3]
+        mock_query.filter.return_value.group_by.return_value.all.return_value = [
+            ("Groceries", 2, 300.0),
+            ("Transportation", 1, 150.0),
+        ]
         mock_session.query.return_value = mock_query
         
         result = financial_summary_service.get_spending_distribution(
@@ -126,22 +113,12 @@ class TestGetSpendingDistribution:
         assert round(result["distribution"][1]["percent"], 2) == 33.33
     
     def test_valid_date_range_account_grouping(self, financial_summary_service, mock_session):
-        """Test with account grouping."""
-        txn1 = Mock()
-        txn1.amount = -100.0
-        txn1.category = "Groceries"
-        txn1.account_id = 1
-        
-        txn2 = Mock()
-        txn2.amount = -200.0
-        txn2.category = "Transportation"
-        txn2.account_id = 2
-        
-        # Mock the query to return tuples of (transaction, account_name)
+        """Account grouping joins the account names in the database."""
         mock_query = MagicMock()
-        mock_query.outerjoin.return_value.filter.return_value.all.return_value = [
-            (txn1, "Checking Account"),
-            (txn2, "Credit Card")
+        mock_query.select_from.return_value.outerjoin.return_value.filter.return_value.group_by.return_value.all.return_value = [
+            ("Checking Account", 1, 100.0),
+            ("Credit Card", 1, 200.0),
+            (None, 1, 50.0),
         ]
         mock_session.query.return_value = mock_query
         
@@ -150,11 +127,11 @@ class TestGetSpendingDistribution:
         )
         
         assert result["group_by"] == "account"
-        assert len(result["distribution"]) == 2
+        assert len(result["distribution"]) == 3
         # Verify account names are used instead of IDs
         names = [d["name"] for d in result["distribution"]]
-        assert "Checking Account" in names
-        assert "Credit Card" in names
+        assert names == ["Credit Card", "Checking Account", "No Account"]
+        assert result["total_amount"] == 350.0
     
     def test_invalid_date_format(self, financial_summary_service):
         """Test with invalid date format."""
@@ -178,7 +155,7 @@ class TestGetSpendingDistribution:
     def test_no_transactions(self, financial_summary_service, mock_session):
         """Test when no transactions exist in the date range."""
         mock_query = MagicMock()
-        mock_query.filter.return_value.all.return_value = []
+        mock_query.filter.return_value.group_by.return_value.all.return_value = []
         mock_session.query.return_value = mock_query
         
         result = financial_summary_service.get_spending_distribution(

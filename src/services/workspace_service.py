@@ -1,11 +1,11 @@
 """Workspace (project) management. Works on an unscoped session: it deals with workspaces themselves."""
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.clock import utc_now
 from src.blueprint import Blueprint, diff_blueprints
 from src.database.models import (
     Account,
@@ -115,7 +115,7 @@ class WorkspaceService:
         workspace = self._get(workspace_id)
         workspace.blueprint = blueprint.to_json()
         workspace.blueprint_version = (workspace.blueprint_version or 1) + 1
-        workspace.updated_at = datetime.utcnow()
+        workspace.updated_at = utc_now()
         self.session.commit()
         return {"workspace_id": workspace.id, "version": workspace.blueprint_version, "blueprint": workspace.blueprint}
 

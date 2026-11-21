@@ -116,7 +116,9 @@ class NetWorthService:
 
     # ------------------------------------------------------------------ snapshots
 
-    def upsert(self, account_id: int, day: date, balance: float, note: str | None = None, source: str = "user") -> BalanceSnapshot:
+    def upsert(
+        self, account_id: int, day: date, balance: float, note: str | None = None, source: str = "user", commit: bool = True
+    ) -> BalanceSnapshot:
         if self._account(account_id) is None:
             raise LookupError(f"Account {account_id} not found")
         snap = (
@@ -132,8 +134,11 @@ class NetWorthService:
             snap.source = source
             if note is not None:
                 snap.note = note
-        self.session.commit()
-        self.session.refresh(snap)
+        if commit:
+            self.session.commit()
+            self.session.refresh(snap)
+        else:
+            self.session.flush()
         return snap
 
     def upsert_many(self, items: list[dict[str, Any]], source: str = "import") -> list[int]:
@@ -141,7 +146,9 @@ class NetWorthService:
         for item in items:
             if self._account(item["account_id"]) is None:
                 raise LookupError(f"Account {item['account_id']} not found")
-        ids = [self.upsert(i["account_id"], i["date"], i["balance"], i.get("note"), source).id for i in items]
+        # one transaction for the whole sheet: either every row is stored or none is
+        ids = [self.upsert(i["account_id"], i["date"], i["balance"], i.get("note"), source, commit=False).id for i in items]
+        self.session.commit()
         return ids
 
     def get(self, snapshot_id: int) -> BalanceSnapshot | None:

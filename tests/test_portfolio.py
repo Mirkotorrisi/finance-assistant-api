@@ -267,3 +267,30 @@ def test_two_cash_accounts_feeding_one_securities_account_write_one_summed_snaps
         ]}, headers=headers)
     written = client.post("/api/portfolio/valuations", headers=headers).json()
     assert written["written"] == [{"securities_account_id": titoli, "value": 10000.0, "unknown_positions": 0}]
+
+
+def test_reading_the_portfolio_writes_nothing_once_instruments_exist_and_cached_prices_match_lookups(client, broker, market):
+    from src.database.init import get_db_session
+    from src.database.models import Instrument
+    from src.services.portfolio_service import PortfolioService
+
+    headers, cash, titoli = broker
+    client.post("/api/portfolio/resolve", headers=headers)
+    client.post("/api/portfolio/refresh", headers=headers)
+    first = client.get("/api/portfolio", headers=headers).json()
+    assert client.get("/api/portfolio", headers=headers).json() == first
+
+    with get_db_session(int(headers["X-Workspace-Id"])) as session:
+        service = PortfolioService(session)
+        assert service.sync_instruments() == []  # nothing new: the read stays read-only
+        instruments = session.query(Instrument).all()
+        direct = {i.id: service._last_price(i, date.today()) for i in instruments}  # uncached lookups
+        direct_fx = service._fx("USD", date.today())
+        service._preload(date.today())
+        for inst in instruments:
+            cached = service._last_price(inst, date.today())
+            assert (cached.id if cached else None) == (direct[inst.id].id if direct[inst.id] else None)
+        assert service._fx("USD", date.today()).id == direct_fx.id
+        assert service._fx("EUR", date.today()) is None
+        # a lookup for another date is not served from the cache
+        assert service._last_price(instruments[0], date(2000, 1, 1)) is None

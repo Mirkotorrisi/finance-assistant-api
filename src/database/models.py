@@ -1,6 +1,7 @@
 """Database models using SQLAlchemy ORM."""
 
-from datetime import datetime
+
+from src.clock import utc_now
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, Index, JSON, Text, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -22,8 +23,8 @@ class Workspace(Base):
     owner_user_id = Column(String(64), nullable=True, index=True)
     blueprint = Column(JSON, nullable=False)
     blueprint_version = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     def to_dict(self, include_blueprint: bool = False):
         data = {
@@ -51,7 +52,7 @@ class ImportBatch(Base):
     row_count = Column(Integer, nullable=False, default=0)
     added_count = Column(Integer, nullable=False, default=0)
     skipped_count = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     def to_dict(self):
         return {
@@ -80,8 +81,8 @@ class Account(Base):
     type = Column(String(50), nullable=False)  # checking, credit, cash, investment, etc.
     currency = Column(String(3), nullable=False, default="EUR")
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     current_balance = Column(Float, nullable=False, default=0.0)
     # trades booked on this (cash) account build positions valued on that (investment) account: Trade Republic's
     # cash account feeds "Trade Republic titoli". NULL = the trades value this same account.
@@ -128,8 +129,8 @@ class BalanceSnapshot(Base):
     balance = Column(Float, nullable=False)
     source = Column(String(16), nullable=False, default="user")  # user | import
     note = Column(String(500), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     def to_dict(self):
         return {
@@ -159,8 +160,8 @@ class ClientProfile(Base):
     updated_by = Column(String(16), nullable=False, default="user")  # user | agent
     ips_approved_at = Column(DateTime, nullable=True)
     ips_approved_hash = Column(String(32), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class ClientProfileVersion(Base):
@@ -174,7 +175,7 @@ class ClientProfileVersion(Base):
     version = Column(Integer, nullable=False)
     document = Column(JSON, nullable=False)
     source = Column(String(16), nullable=False, default="user")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class AdvisorDecision(Base):
@@ -196,8 +197,8 @@ class AdvisorDecision(Base):
     status = Column(String(16), nullable=False, default="proposed")  # proposed | accepted | rejected | done
     profile_version = Column(Integer, nullable=True)
     outcome = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     def to_dict(self):
         return {
@@ -238,8 +239,8 @@ class BankConnection(Base):
     last_sync_at = Column(DateTime, nullable=True)
     last_sync_status = Column(String(16), nullable=True)  # ok | partial | error | rate_limited | expired
     last_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     links = relationship("BankAccountLink", back_populates="connection", cascade="all, delete-orphan")
 
@@ -289,8 +290,8 @@ class BankAccountLink(Base):
     last_transaction_date = Column(Date, nullable=True)
     last_balance = Column(Float, nullable=True)
     last_balance_date = Column(Date, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     connection = relationship("BankConnection", back_populates="links")
 
@@ -336,8 +337,8 @@ class Instrument(Base):
     manual_price = Column(Float, nullable=True)
     manual_price_date = Column(Date, nullable=True)
     last_error = Column(String(300), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     def to_dict(self):
         return {
@@ -370,7 +371,7 @@ class Price(Base):
     close = Column(Float, nullable=False)
     currency = Column(String(3), nullable=False, default="EUR")
     source = Column(String(24), nullable=False, default="alphavantage")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class FxRate(Base):
@@ -396,8 +397,8 @@ class Category(Base):
     name = Column(String(100), unique=True, nullable=False, index=True)
     type = Column(String(10), nullable=False)  # 'income' or 'expense'
     color = Column(String(7), nullable=True)  # Hex color code, e.g., '#FF5733'
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     
     # Relationship
     transactions = relationship("Transaction", back_populates="category_rel")
@@ -436,8 +437,8 @@ class UserPreferences(Base):
     budget_amount = Column(Float, nullable=True)
     budget_period = Column(String(20), nullable=False, default="monthly")
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     def __repr__(self):
         return f"<UserPreferences(user_id='{self.user_id}', onboarding_completed={self.onboarding_completed})>"
@@ -464,7 +465,7 @@ class MerchantRule(Base):
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
     pattern = Column(String(200), nullable=False, index=True)
     category = Column(String(100), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     def to_dict(self):
         return {
@@ -492,8 +493,8 @@ class Transaction(Base):
     category = Column(String(100), nullable=False, index=True)
     description = Column(String(500), nullable=False)
     currency = Column(String(3), default="EUR")  # Kept for backward compatibility with existing code
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
     
     # Who decided the category and how sure it is: 'user' | 'rule' | 'file' | 'ai' | 'fallback' | 'legacy'.
     # Only decisions by the user (or a rule the user made) count as certain (reviewed).

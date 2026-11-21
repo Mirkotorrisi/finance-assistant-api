@@ -8,12 +8,12 @@ import datetime
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import extract, func
 from sqlalchemy.orm import Session
 
 from src.blueprint import Blueprint
 from src.database.models import Account, Transaction, Workspace
-from src.services.coverage import coverage_of
+from src.services.coverage import coverage_totals
 from src.services.investments import investment_texts, not_investment
 
 GROUP_BYS = ("category", "group", "account", "month")
@@ -46,16 +46,31 @@ class SpendingReportService:
         except ValueError:
             raise ValueError("Invalid date format. Use 'YYYY-MM-DD'")
 
-        query = self.session.query(Transaction).filter(
-            Transaction.date >= start,
-            Transaction.date <= end,
-            Transaction.is_transfer.is_(False),
-            not_investment(investment_texts(self.session)),  # securities are not spending or income
-            Transaction.amount < 0 if flow == "expense" else Transaction.amount > 0,
+        # the database groups by category, account, month and review state: the rows that come back are a few
+        # dozen whatever the number of transactions, and the blueprint mapping below is done once per group
+        year, month = extract("year", Transaction.date), extract("month", Transaction.date)
+        query = (
+            self.session.query(
+                Transaction.category,
+                Transaction.account_id,
+                year,
+                month,
+                Transaction.reviewed,
+                func.count(Transaction.id),
+                func.sum(func.abs(Transaction.amount)),
+            )
+            .filter(
+                Transaction.date >= start,
+                Transaction.date <= end,
+                Transaction.is_transfer.is_(False),
+                not_investment(investment_texts(self.session)),  # securities are not spending or income
+                Transaction.amount < 0 if flow == "expense" else Transaction.amount > 0,
+            )
+            .group_by(Transaction.category, Transaction.account_id, year, month, Transaction.reviewed)
         )
         if account_id is not None:
             query = query.filter(Transaction.account_id == account_id)
-        transactions = query.all()
+        rows = query.all()
 
         blueprint = self._blueprint()
         nodes = blueprint.nodes()
@@ -63,27 +78,35 @@ class SpendingReportService:
 
         totals: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"amount": 0.0, "count": 0})
         grand_total = 0.0
-        for t in transactions:
-            amount = abs(t.amount)
+        transaction_count = 0
+        reviewed_amount = unreviewed_amount = 0.0
+        reviewed_count = unreviewed_count = 0
+        for category, row_account_id, row_year, row_month, reviewed, count, amount in rows:
+            amount = float(amount or 0.0)
             grand_total += amount
-            key = blueprint.resolve_category(t.category)
+            transaction_count += count
+            if reviewed:
+                reviewed_amount, reviewed_count = reviewed_amount + amount, reviewed_count + count
+            else:
+                unreviewed_amount, unreviewed_count = unreviewed_amount + amount, unreviewed_count + count
+            key = blueprint.resolve_category(category)
             if group_by == "category":
-                bucket = key or f"?{t.category}"
-                label = nodes[key].label if key else t.category
+                bucket = key or f"?{category}"
+                label = nodes[key].label if key else category
                 entries = [(bucket, label, {"category_key": key, "mapped": key is not None})]
             elif group_by == "group":
                 group_keys = blueprint.groups_of(key) if key else []
                 labels = {g.key: g.label for g in blueprint.groups}
                 entries = [(g, labels[g], {}) for g in group_keys] or [("_ungrouped", "Senza gruppo", {})]
             elif group_by == "account":
-                entries = [(str(t.account_id), accounts.get(t.account_id, "Senza conto"), {"account_id": t.account_id})]
+                entries = [(str(row_account_id), accounts.get(row_account_id, "Senza conto"), {"account_id": row_account_id})]
             else:
-                month = t.date.strftime("%Y-%m")
-                entries = [(month, month, {})]
+                month_key = f"{int(row_year):04d}-{int(row_month):02d}"
+                entries = [(month_key, month_key, {})]
             for bucket, label, extra in entries:
                 slot = totals[bucket]
                 slot["amount"] += amount
-                slot["count"] += 1
+                slot["count"] += count
                 slot.update({"key": bucket, "label": label, **extra})
 
         items: List[Dict[str, Any]] = sorted(totals.values(), key=lambda i: (-i["amount"], i["label"]))
@@ -97,9 +120,9 @@ class SpendingReportService:
             "group_by": group_by,
             "flow": flow,
             "total": round(grand_total, 2),
-            "transaction_count": len(transactions),
+            "transaction_count": transaction_count,
             # how much of this total rests on categories the user confirmed (the rest are suggestions)
-            "coverage": coverage_of(transactions),
+            "coverage": coverage_totals(reviewed_amount, unreviewed_amount, reviewed_count, unreviewed_count),
             "items": items,
             # groups can overlap, so their amounts may add up to more than the total
             "note": "A category in several groups counts in each of them." if group_by == "group" else None,

@@ -4,7 +4,9 @@ from datetime import date as Date
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from src.clock import to_naive_utc
 
 
 class BankAccountIn(BaseModel):
@@ -28,6 +30,11 @@ class BankConnectionCreate(BaseModel):
         default=None, description="An existing connection to the same bank being renewed: keeps its account links."
     )
 
+    @field_validator("valid_until")
+    @classmethod
+    def _naive_utc(cls, value: datetime | None) -> datetime | None:
+        return to_naive_utc(value)  # the columns hold naive UTC; a zone-aware value would be shifted by the driver
+
 
 class BankConnectionUpdate(BaseModel):
     status: Literal["active", "expired", "revoked", "error"] | None = None
@@ -37,6 +44,11 @@ class BankConnectionUpdate(BaseModel):
     last_sync_status: str | None = Field(default=None, max_length=16)
     last_error: str | None = None
     valid_until: datetime | None = None
+
+    @field_validator("valid_until", "last_sync_at")
+    @classmethod
+    def _naive_utc(cls, value: datetime | None) -> datetime | None:
+        return to_naive_utc(value)
 
 
 class NewAccount(BaseModel):

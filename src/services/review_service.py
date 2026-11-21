@@ -6,11 +6,10 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from src.blueprint import Blueprint
-from src.database.models import Transaction, Workspace
-from src.services.coverage import coverage_of
+from src.database.models import MerchantRule, Transaction, Workspace
+from src.services.coverage import coverage_query
 from src.services.investments import investment_texts, not_investment
 from src.services.merchant import UNKNOWN, merchant_key as compute_merchant_key
-from src.services.merchant_rule_service import MerchantRuleService
 
 
 class ReviewError(Exception):
@@ -98,17 +97,26 @@ class ReviewService:
             raise ReviewError(422, f"{category!r} has subcategories: choose one of them")
         return key
 
+    def _save_rule(self, merchant_key: str, category: str) -> None:
+        """Upsert the merchant rule in the current transaction (the caller commits)."""
+        pattern = merchant_key.lower()
+        rule = self.session.query(MerchantRule).filter(MerchantRule.pattern == pattern).first()
+        if rule is None:
+            self.session.add(MerchantRule(pattern=pattern, category=category.lower()))
+        else:
+            rule.category = category.lower()
+
     def confirm(self, merchant_key: str, category: str, create_rule: bool = True) -> Dict[str, Any]:
         """Give every unconfirmed transaction of a merchant this category, and remember it for next time."""
         key = self._category_key(category)
         rows = [t for t in self._unreviewed() if self._key_of(t) == merchant_key]
         for t in rows:
             t.category, t.category_source, t.reviewed, t.confidence = key, "user", True, None
-        self.session.commit()
         rule_created = False
         if create_rule and merchant_key != UNKNOWN:
-            MerchantRuleService(self.session).create_rule(merchant_key, key)
+            self._save_rule(merchant_key, key)
             rule_created = True
+        self.session.commit()  # the transactions and the rule land together, or not at all
         return {"merchant_key": merchant_key, "category": key, "transactions_updated": len(rows), "rule_created": rule_created}
 
     def accept(
@@ -130,7 +138,7 @@ class ReviewService:
         rule_created = False
         if create_rule and merchant_key and merchant_key != UNKNOWN and rows:
             top = Counter(t.category for t in rows).most_common(1)[0][0]
-            MerchantRuleService(self.session).create_rule(merchant_key, self._category_key(top))
+            self._save_rule(merchant_key, self._category_key(top))
             rule_created = True
         for t in rows:
             t.category_source, t.reviewed = "user", True
@@ -140,9 +148,9 @@ class ReviewService:
     # ------------------------------------------------------------------ coverage
 
     def coverage(self, flow: str = "expense") -> Dict[str, Any]:
-        rows = self.session.query(Transaction).filter(
+        query = self.session.query(Transaction).filter(
             Transaction.is_transfer.is_(False),
             not_investment(investment_texts(self.session)),
             Transaction.amount < 0 if flow == "expense" else Transaction.amount > 0,
-        ).all()
-        return coverage_of(rows)
+        )
+        return coverage_query(query)

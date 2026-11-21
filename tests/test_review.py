@@ -238,3 +238,32 @@ def test_review_is_scoped_to_the_workspace(client, project):
     assert client.get("/api/review/queue", headers={"X-Workspace-Id": str(other["id"])}).json()["total_groups"] == 0
     client.post("/api/review/accept", json={"all_unreviewed": True}, headers={"X-Workspace-Id": str(other["id"])})
     assert client.get("/api/review/queue", headers=headers).json()["total_groups"] == 3  # untouched
+
+
+def test_confirming_twice_updates_the_one_rule_and_the_rule_lands_with_the_transactions(client, project):
+    headers, a, b = project
+    seed_queue(client, headers, a, b)
+    client.post("/api/review/confirm", json={"merchant_key": "coop lombardia", "category": "Spesa"}, headers=headers)
+    # the user changes their mind: the same rule is updated, not duplicated
+    do_import(client, headers, a, [row("2026-04-01", -10, "COOP LOMBARDIA 1", category="ristoranti", source="ai", confidence=0.5)])
+    client.post("/api/review/confirm", json={"merchant_key": "coop lombardia", "category": "Ristoranti"}, headers=headers)
+    rules = [r for r in client.get("/api/merchant-rules", headers=headers).json() if r["pattern"] == "coop lombardia"]
+    assert [r["category"] for r in rules] == ["ristoranti"]
+    # only the unconfirmed row moved: the earlier confirmation is a user decision and stays
+    coops = {t["description"]: t for t in client.get("/api/transactions", headers=headers).json() if t["merchant_key"] == "coop lombardia"}
+    assert coops["COOP LOMBARDIA 1"]["category"] == "ristoranti" and all(t["reviewed"] for t in coops.values())
+    assert sum(t["category"] == "spesa" for t in coops.values()) == 3
+
+
+def test_coverage_in_sql_matches_the_python_sum(client, project):
+    from src.database.init import get_db_session
+    from src.database.models import Transaction
+    from src.services.coverage import coverage_of, coverage_query
+
+    headers, a, b = project
+    seed_queue(client, headers, a, b)
+    with get_db_session(int(headers["X-Workspace-Id"])) as session:
+        query = session.query(Transaction).filter(Transaction.is_transfer.is_(False), Transaction.amount < 0)
+        assert coverage_query(query) == coverage_of(query.all())
+        empty = session.query(Transaction).filter(Transaction.amount > 10**9)
+        assert coverage_query(empty) == coverage_of([])

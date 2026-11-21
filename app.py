@@ -50,6 +50,7 @@ from src.routes import (
 )
 from src.database.init import close_database, init_database
 from src.market.scheduler import scheduler as price_scheduler
+from src.single_process import assert_single_process
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)  # its INFO line prints full URLs, API keys included
@@ -77,6 +78,7 @@ def cors_origins() -> list:
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
     """Lifecycle events for the FastAPI application."""
+    assert_single_process("finance-assistant-api")  # the price scheduler must run once, not once per worker
     logger.info("Initializing database...")
     init_database()
     price_scheduler.start()  # no-op without ALPHAVANTAGE_API_KEY or with FINANCE_PRICES=off

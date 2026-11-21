@@ -229,3 +229,32 @@ def test_report_rejects_bad_parameters(client, banks):
     headers, *_ = banks
     assert client.get("/api/reports/spending?start_date=x&end_date=y", headers=headers).status_code == 400
     assert client.get("/api/reports/spending?start_date=2026-01-01&end_date=2026-01-31&group_by=zzz", headers=headers).status_code == 400
+
+
+def test_transfer_detection_after_an_import_only_looks_around_the_new_rows(client, banks):
+    """Rows far from the imported ones are not loaded: pairs are still found and old ambiguities stay untouched."""
+    headers, checking, card = banks
+    # January: a keyword-less pair the user never confirmed (stays unpaired)
+    do_import(client, headers, checking, [row("2026-01-05", -100, "PAGAMENTO XYZ")])
+    do_import(client, headers, card, [row("2026-01-05", 100, "ACCREDITO")])
+    # March: the counterpart was imported first, the hinted outflow a week later
+    do_import(client, headers, card, [row("2026-03-03", 100, "PAGAMENTO RICEVUTO")])
+    result = do_import(client, headers, checking, [row("2026-03-05", -100, "BONIFICO PAGAMENTO CARTA")])
+    assert result["transfers_detected"] == 1
+
+    transactions = {t["description"]: t for t in client.get("/api/transactions", headers=headers).json()}
+    assert transactions["BONIFICO PAGAMENTO CARTA"]["transfer_pair_id"] == transactions["PAGAMENTO RICEVUTO"]["id"]
+    assert not transactions["PAGAMENTO XYZ"]["is_transfer"] and not transactions["ACCREDITO"]["is_transfer"]
+    # the one-off detection over everything still sees the January pair as a suggestion
+    suggestions = client.post("/api/transfers/detect?include_unhinted=true&dry_run=true", headers=headers).json()
+    assert suggestions["count"] == 1 and suggestions["pairs"][0]["out_description"] == "PAGAMENTO XYZ"
+
+
+def test_detect_transfers_with_unknown_ids_loads_nothing(client, banks):
+    from src.database.init import get_db_session
+    from src.services.import_service import ImportService
+
+    headers, checking, card = banks
+    import_card_payment(client, headers, checking, card)
+    with get_db_session(int(headers["X-Workspace-Id"])) as session:
+        assert ImportService(session).detect_transfers(only_ids={987654321}) == []

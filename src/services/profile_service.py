@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from src.clock import utc_now
 from src.database.models import AdvisorDecision, ClientProfileVersion
 from src.database.models import ClientProfile as ProfileRow
 from src.profile import ClientProfile, merge_profile
@@ -43,7 +44,7 @@ class ProfileService:
             row.document = profile.to_json()
             row.version = (row.version or 1) + 1
             row.updated_by = source
-            row.updated_at = datetime.utcnow()
+            row.updated_at = utc_now()
         self.session.flush()
         self.session.add(
             ClientProfileVersion(workspace_id=self.workspace_id, version=row.version, document=row.document, source=source)
@@ -67,7 +68,7 @@ class ProfileService:
         if profile.ips.is_empty():
             raise ValueError("The profile has no investment policy to approve")
         row.ips_approved_hash = profile.ips.fingerprint()
-        row.ips_approved_at = datetime.utcnow()
+        row.ips_approved_at = utc_now()
         self.session.commit()
         return self._response(row)
 
@@ -158,6 +159,6 @@ class ProfileService:
         for field in ("outcome", "title", "rationale"):
             if changes.get(field) is not None:
                 setattr(row, field, changes[field].strip())
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now()
         self.session.commit()
         return row.to_dict()

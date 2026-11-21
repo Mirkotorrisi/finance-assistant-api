@@ -18,8 +18,11 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.clock import utc_now
 from src.database.models import Account, BalanceSnapshot, FxRate, Instrument, Price
 from src.market.providers import AlphaVantage, MarketError, OpenFigi, RateLimited, classify_listing, rank_symbols
 from src.services.investments import InvestmentService
@@ -39,6 +42,11 @@ class PortfolioService:
         self.session = session
         self.investments = InvestmentService(session)
         self.request_spacing = request_spacing  # Alpha Vantage's legacy 5-per-minute limit
+        # the latest close per instrument and the latest rate per currency, loaded in one query each for a valuation
+        # date (``_preload``); a lookup for another date, or before a preload, goes to the database
+        self._prices: Optional[Dict[int, Price]] = None
+        self._fx_rates: Optional[Dict[str, FxRate]] = None
+        self._cache_upto: Optional[date] = None
 
     # ------------------------------------------------------------------ instruments
 
@@ -46,6 +54,7 @@ class PortfolioService:
         """One instrument row per position key the statements produce (ISIN, else normalised name)."""
         by_key = {i.key: i for i in self.session.query(Instrument).all()}
         created = []
+        changed = False
         for positions in self.investments.positions_by_account().values():
             for pos in positions:
                 key = pos["key"]
@@ -53,6 +62,7 @@ class PortfolioService:
                     inst = by_key[key]
                     if pos.get("isin") and not inst.isin:
                         inst.isin = pos["isin"]
+                        changed = True
                     continue
                 inst = Instrument(key=key, isin=pos.get("isin"), name=(pos.get("name") or key)[:200])
                 if not inst.isin:
@@ -65,11 +75,19 @@ class PortfolioService:
                 self.session.add(inst)
                 by_key[key] = inst
                 created.append(inst)
-        self.session.commit()
+        if not created and not changed:
+            return []  # the usual case: a read-only call stays read-only
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # two requests saw the same new position at once and the other one stored it first: theirs is as good
+            self.session.rollback()
+            return []
         return created
 
     def list_instruments(self) -> List[Dict[str, Any]]:
         out = []
+        self._preload(None)
         for inst in self.session.query(Instrument).order_by(Instrument.name).all():
             data = inst.to_dict()
             last = self._last_price(inst)
@@ -90,7 +108,7 @@ class PortfolioService:
         if changes.get("manual_price") is not None:
             inst.valuation = changes.get("valuation") or "manual"
             inst.manual_price_date = changes.get("manual_price_date") or date.today()
-        inst.updated_at = datetime.utcnow()
+        inst.updated_at = utc_now()
         self.session.commit()
         return inst.to_dict()
 
@@ -177,7 +195,31 @@ class PortfolioService:
 
     # ------------------------------------------------------------------ prices
 
+    def _preload(self, upto: Optional[date]) -> None:
+        """Load the last close of every instrument and the last rate of every currency up to ``upto`` (None: ever)."""
+        latest_price = self.session.query(Price.instrument_id, func.max(Price.date).label("day"))
+        latest_fx = self.session.query(FxRate.quote, func.max(FxRate.date).label("day")).filter(FxRate.base == "EUR")
+        if upto is not None:
+            latest_price = latest_price.filter(Price.date <= upto)
+            latest_fx = latest_fx.filter(FxRate.date <= upto)
+        latest_price = latest_price.group_by(Price.instrument_id).subquery()
+        latest_fx = latest_fx.group_by(FxRate.quote).subquery()
+        prices = self.session.query(Price).join(
+            latest_price, and_(Price.instrument_id == latest_price.c.instrument_id, Price.date == latest_price.c.day)
+        )
+        rates = self.session.query(FxRate).join(
+            latest_fx, and_(FxRate.quote == latest_fx.c.quote, FxRate.date == latest_fx.c.day)
+        ).filter(FxRate.base == "EUR")
+        self._prices = {p.instrument_id: p for p in prices}
+        self._fx_rates = {r.quote: r for r in rates}
+        self._cache_upto = upto
+
+    def _forget_prices(self) -> None:
+        self._prices = self._fx_rates = None
+
     def _last_price(self, inst: Instrument, upto: Optional[date] = None) -> Optional[Price]:
+        if self._prices is not None and upto == self._cache_upto:
+            return self._prices.get(inst.id)
         query = self.session.query(Price).filter(Price.instrument_id == inst.id)
         if upto is not None:
             query = query.filter(Price.date <= upto)
@@ -193,6 +235,7 @@ class PortfolioService:
         today = today or date.today()
         if not av.configured():
             return {"requests": 0, "updated": [], "skipped": "ALPHAVANTAGE_API_KEY is not set"}
+        self._forget_prices()
         self.sync_instruments()
         instruments = self.session.query(Instrument).filter(Instrument.valuation == "market", Instrument.price_symbol.isnot(None)).order_by(Instrument.id).all()
         requests = 0
@@ -283,9 +326,9 @@ class PortfolioService:
         for q in quotes[-120:]:
             row = existing.get(q.day)
             if row is None:
-                self.session.add(Price(instrument_id=inst.id, date=q.day, close=q.close, currency=q.currency, created_at=datetime.utcnow()))
+                self.session.add(Price(instrument_id=inst.id, date=q.day, close=q.close, currency=q.currency, created_at=utc_now()))
             else:
-                row.close, row.currency, row.created_at = q.close, q.currency, datetime.utcnow()
+                row.close, row.currency, row.created_at = q.close, q.currency, utc_now()
 
     def _fx_fetched_today(self, ccy: str, today: date) -> bool:
         latest = self.session.query(FxRate).filter(FxRate.base == "EUR", FxRate.quote == ccy).order_by(FxRate.date.desc()).first()
@@ -294,6 +337,8 @@ class PortfolioService:
     def _fx(self, ccy: str, upto: date) -> Optional[FxRate]:
         if ccy == "EUR":
             return None
+        if self._fx_rates is not None and upto == self._cache_upto:
+            return self._fx_rates.get(ccy)
         return self.session.query(FxRate).filter(FxRate.base == "EUR", FxRate.quote == ccy, FxRate.date <= upto).order_by(FxRate.date.desc()).first()
 
     # ------------------------------------------------------------------ valuation
@@ -301,6 +346,7 @@ class PortfolioService:
     def valued_positions(self, today: Optional[date] = None) -> Dict[str, Any]:
         today = today or date.today()
         self.sync_instruments()
+        self._preload(today)  # one query for every last close, one for every rate, instead of two per position
         instruments = {i.key: i for i in self.session.query(Instrument).all()}
         accounts = {a.id: a for a in self.session.query(Account).all()}
         net_worth = NetWorthService(self.session)  # loads the transactions once for every account below

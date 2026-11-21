@@ -262,3 +262,13 @@ def test_one_off_absorb_removes_only_the_mute_rows_with_a_twin(client, project):
     left = sorted((t["date"], t["amount"], t["source"]) for t in client.get("/api/transactions", headers=headers).json())
     assert left == [("2026-11-10", -50.0, "statement"), ("2026-11-11", -50.0, "bank"), ("2026-11-20", -7.0, "bank")]
     assert client.get("/api/imports/suspects", headers=headers).json() == []
+
+
+def test_zone_aware_timestamps_are_stored_as_naive_utc(client, project):
+    headers, bank = project
+    consent = {**CONSENT, "valid_until": "2027-05-20T12:00:00+02:00", "session_ref": "ref-tz"}
+    created = client.post("/api/bank-connections", json=consent, headers=headers).json()
+    assert created["valid_until"] == "2027-05-20T10:00:00"
+    updated = client.put(f"/api/bank-connections/{created['id']}", json={"last_sync_at": "2026-11-21T10:00:00+01:00"}, headers=headers)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["last_sync_at"] == "2026-11-21T09:00:00"
