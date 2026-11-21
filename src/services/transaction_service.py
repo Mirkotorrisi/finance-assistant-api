@@ -50,9 +50,11 @@ class TransactionService:
         category: str | None = None, 
         start_date: str | None = None, 
         end_date: str | None = None,
-        account_id: int | None = None
+        account_id: int | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """List transactions with optional filters."""
+        """List transactions with optional filters, newest first; ``limit``/``offset`` page through them."""
         # Convert string dates to date objects if present
         start_date_obj = datetime.datetime.fromisoformat(start_date).date() if start_date else None
         end_date_obj = datetime.datetime.fromisoformat(end_date).date() if end_date else None
@@ -63,9 +65,12 @@ class TransactionService:
         if category and blueprint and blueprint.resolve_category(category):
             wanted = blueprint.resolve_category(category)
             texts = [t for t in self.transaction_repo.get_distinct_categories() if blueprint.resolve_category(t) == wanted]
-        transactions = self.transaction_repo.list(None if texts is not None else category, start_date_obj, end_date_obj, account_id)
-        if texts is not None:
-            transactions = [t for t in transactions if t.category in texts]
+        if texts is not None and not texts:
+            return []  # the blueprint knows the category but no stored row uses any of its spellings
+        transactions = self.transaction_repo.list(
+            None if texts is not None else category, start_date_obj, end_date_obj, account_id,
+            categories=texts, limit=limit, offset=offset,
+        )
         return [self._with_label(t.to_dict()) for t in transactions]
 
     def add_transaction(

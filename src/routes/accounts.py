@@ -33,7 +33,7 @@ def get_account_service(workspace_id: int = Depends(resolve_workspace_id)):
     summary="List accounts",
     response_description="A list of accounts",
 )
-async def list_accounts(
+def list_accounts(
     active_only: bool = True,
     service: AccountService = Depends(get_account_service),
 ):
@@ -47,7 +47,7 @@ async def list_accounts(
     summary="Get an account",
     response_description="The requested account",
 )
-async def get_account(
+def get_account(
     account_id: int,
     service: AccountService = Depends(get_account_service),
 ):
@@ -65,7 +65,7 @@ async def get_account(
     summary="Create an account",
     response_description="The newly created account",
 )
-async def create_account(
+def create_account(
     account: AccountCreate,
     service: AccountService = Depends(get_account_service),
 ):
@@ -85,7 +85,7 @@ async def create_account(
     summary="Update an account",
     response_description="The updated account",
 )
-async def update_account(
+def update_account(
     account_id: int,
     updates: AccountUpdate,
     service: AccountService = Depends(get_account_service),
@@ -106,7 +106,7 @@ async def update_account(
     summary="Delete (deactivate) an account",
     response_description="Confirmation message",
 )
-async def delete_account(
+def delete_account(
     account_id: int,
     service: AccountService = Depends(get_account_service),
 ):
@@ -123,7 +123,7 @@ async def delete_account(
     summary="Get account balance",
     response_description="Current balance for the account",
 )
-async def get_account_balance(
+def get_account_balance(
     account_id: int,
     service: AccountService = Depends(get_account_service),
 ):

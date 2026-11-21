@@ -33,13 +33,13 @@ class RecategorizeRequest(BaseModel):
 
 
 @router.get("", response_model=List[Dict[str, Any]])
-async def list_rules(service: MerchantRuleService = Depends(get_service)):
+def list_rules(service: MerchantRuleService = Depends(get_service)):
     """List all merchant alias rules."""
     return service.list_rules()
 
 
 @router.post("", response_model=Dict[str, Any], status_code=201)
-async def create_rule(
+def create_rule(
     body: MerchantRuleCreate,
     service: MerchantRuleService = Depends(get_service),
 ):
@@ -48,7 +48,7 @@ async def create_rule(
 
 
 @router.delete("/{rule_id}")
-async def delete_rule(
+def delete_rule(
     rule_id: int,
     service: MerchantRuleService = Depends(get_service),
 ):
@@ -63,14 +63,14 @@ class ResolveRequest(BaseModel):
 
 
 @router.post("/resolve", response_model=List[Dict[str, Any]])
-async def resolve_merchants(body: ResolveRequest, service: MerchantRuleService = Depends(get_service)):
+def resolve_merchants(body: ResolveRequest, service: MerchantRuleService = Depends(get_service)):
     """For each description: its normalised merchant key and the category of the most specific saved rule that
     matches it (null when none does). Rules come from confirmations in the review queue and from the blueprint."""
     return service.resolve(body.descriptions)
 
 
 @router.post("/recategorize", response_model=Dict[str, Any])
-async def recategorize(
+def recategorize(
     body: RecategorizeRequest,
     service: MerchantRuleService = Depends(get_service),
 ):

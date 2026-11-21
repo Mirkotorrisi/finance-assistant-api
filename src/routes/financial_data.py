@@ -26,7 +26,7 @@ def get_financial_data_service(workspace_id: int = Depends(resolve_workspace_id)
     summary="Get yearly financial data",
     response_description="Aggregated financial data for the requested year",
 )
-async def get_financial_data(
+def get_financial_data(
     year: int,
     service: FinancialDataService = Depends(get_financial_data_service),
 ):

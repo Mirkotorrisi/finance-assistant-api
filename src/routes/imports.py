@@ -29,7 +29,7 @@ def _guard(call):
 
 
 @router.post("/api/imports", response_model=ImportResult, summary="Import a parsed statement")
-async def import_statement(body: ImportRequest, service: ImportService = Depends(get_import_service)):
+def import_statement(body: ImportRequest, service: ImportService = Depends(get_import_service)):
     """Add the new rows of a statement to an account, skipping the ones already stored.
 
     Safe to repeat or to overlap with earlier statements. Transfers between the workspace's own accounts are
@@ -43,44 +43,44 @@ async def import_statement(body: ImportRequest, service: ImportService = Depends
 
 
 @router.get("/api/imports/suspects", summary="Bank rows that may duplicate a statement row")
-async def list_suspects(service: ImportService = Depends(get_import_service)) -> List[Dict[str, Any]]:
+def list_suspects(service: ImportService = Depends(get_import_service)) -> List[Dict[str, Any]]:
     """Each item has the bank-synced ``transaction`` and the stored ``twin`` it resembles (same account and amount,
     a few days apart, different wording). Settle them with the resolve endpoint."""
     return service.list_suspects()
 
 
 @router.post("/api/imports/suspects/resolve-bulk", summary="Settle every suspect pair within a day gap")
-async def resolve_suspects_bulk(body: ResolveBulkRequest, service: ImportService = Depends(get_import_service)):
+def resolve_suspects_bulk(body: ResolveBulkRequest, service: ImportService = Depends(get_import_service)):
     """``max_day_gap: 0`` settles the same-day pairs only (the safe default after a first sync over a period whose
     statements were already uploaded); the action is the same as the single resolve."""
     return _guard(lambda: service.resolve_suspects_bulk(body.action, body.max_day_gap))
 
 
 @router.post("/api/imports/suspects/{transaction_id}/resolve", summary="Settle a suspect duplicate")
-async def resolve_suspect(transaction_id: int, body: ResolveSuspectRequest, service: ImportService = Depends(get_import_service)):
+def resolve_suspect(transaction_id: int, body: ResolveSuspectRequest, service: ImportService = Depends(get_import_service)):
     return _guard(lambda: service.resolve_suspect(transaction_id, body.action))
 
 
 @router.post("/api/imports/absorb-mute", summary="Drop mute bank rows that duplicate statement rows")
-async def absorb_mute(account_id: int, service: ImportService = Depends(get_import_service)):
+def absorb_mute(account_id: int, service: ImportService = Depends(get_import_service)):
     """For banks whose API gives amount and date only (Trade Republic): the placeholder rows that match a statement
     row already stored are removed; the ones the statements do not cover yet stay."""
     return _guard(lambda: service.absorb_mute_rows(account_id))
 
 
 @router.get("/api/imports", summary="List imports")
-async def list_imports(service: ImportService = Depends(get_import_service)) -> List[Dict[str, Any]]:
+def list_imports(service: ImportService = Depends(get_import_service)) -> List[Dict[str, Any]]:
     return service.list_batches()
 
 
 @router.delete("/api/imports/{batch_id}", summary="Undo an import")
-async def undo_import(batch_id: int, service: ImportService = Depends(get_import_service)):
+def undo_import(batch_id: int, service: ImportService = Depends(get_import_service)):
     """Remove every transaction the import added."""
     return _guard(lambda: service.undo_batch(batch_id))
 
 
 @router.post("/api/transfers/detect", summary="Detect transfers between own accounts")
-async def detect_transfers(
+def detect_transfers(
     include_unhinted: bool = False, dry_run: bool = False, service: ImportService = Depends(get_import_service)
 ):
     """Pair matching outflow/inflow across accounts. ``include_unhinted`` + ``dry_run`` lists suggestions to confirm."""
@@ -89,11 +89,11 @@ async def detect_transfers(
 
 
 @router.post("/api/transfers/pair", summary="Mark two transactions as a transfer")
-async def pair_transfer(body: PairRequest, service: ImportService = Depends(get_import_service)):
+def pair_transfer(body: PairRequest, service: ImportService = Depends(get_import_service)):
     return _guard(lambda: service.pair_transfer(body.first_id, body.second_id))
 
 
 @router.delete("/api/transfers/{transaction_id}", summary="Unmark a transfer")
-async def unmark_transfer(transaction_id: int, service: ImportService = Depends(get_import_service)):
+def unmark_transfer(transaction_id: int, service: ImportService = Depends(get_import_service)):
     """Treat the transaction (and its partner) as normal spending/income again."""
     return _guard(lambda: service.unmark_transfer(transaction_id))

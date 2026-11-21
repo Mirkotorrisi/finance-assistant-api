@@ -80,7 +80,7 @@ class TestListTransactions:
 
         results = transaction_service.list_transactions()
 
-        mock_transaction_repo.list.assert_called_once_with(None, None, None, None)
+        mock_transaction_repo.list.assert_called_once_with(None, None, None, None, categories=None, limit=None, offset=0)
         assert len(results) == 1
         assert results[0]["id"] == 1
 

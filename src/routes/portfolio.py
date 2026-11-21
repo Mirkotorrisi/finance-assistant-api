@@ -61,7 +61,7 @@ class InstrumentUpdate(BaseModel):
 
 
 @router.get("", summary="Positions at market value")
-async def portfolio(service: PortfolioService = Depends(get_portfolio_service)) -> Dict[str, Any]:
+def portfolio(service: PortfolioService = Depends(get_portfolio_service)) -> Dict[str, Any]:
     """Per broker (source cash account → securities account): every open position with quantity, average cost,
     last close and its date, value in EUR, unrealised gain; totals and the allocation by asset class. ``price_basis``
     says market | cost | manual | no_price."""
@@ -69,13 +69,13 @@ async def portfolio(service: PortfolioService = Depends(get_portfolio_service)) 
 
 
 @router.get("/instruments", summary="Instruments and their price settings")
-async def instruments(service: PortfolioService = Depends(get_portfolio_service)):
+def instruments(service: PortfolioService = Depends(get_portfolio_service)):
     service.sync_instruments()
     return service.list_instruments()
 
 
 @router.put("/instruments/{instrument_id}", summary="Set an instrument's symbol, asset class or manual price")
-async def update_instrument(instrument_id: int, body: InstrumentUpdate, service: PortfolioService = Depends(get_portfolio_service)):
+def update_instrument(instrument_id: int, body: InstrumentUpdate, service: PortfolioService = Depends(get_portfolio_service)):
     try:
         return service.update_instrument(instrument_id, body.model_dump(exclude_unset=True))
     except LookupError as exc:
@@ -83,14 +83,14 @@ async def update_instrument(instrument_id: int, body: InstrumentUpdate, service:
 
 
 @router.post("/holdings", summary="Record the holdings a broker statement lists")
-async def record_holdings(body: HoldingsIn, service: PortfolioService = Depends(get_portfolio_service)):
+def record_holdings(body: HoldingsIn, service: PortfolioService = Depends(get_portfolio_service)):
     """Seeds or updates the instruments (name, ISIN, class) and keeps the statement's price as their manual price,
     used until a market close exists. Called by the gateway after reading a known broker statement."""
     return service.record_holdings(body.account_id, body.as_of, [h.model_dump() for h in body.holdings])
 
 
 @router.post("/resolve", summary="Find price symbols for the instruments (OpenFIGI)")
-async def resolve(only_missing: bool = True, service: PortfolioService = Depends(get_portfolio_service)):
+def resolve(only_missing: bool = True, service: PortfolioService = Depends(get_portfolio_service)):
     figi = make_openfigi()
     try:
         return service.resolve_symbols(figi, only_missing=only_missing)
@@ -99,7 +99,7 @@ async def resolve(only_missing: bool = True, service: PortfolioService = Depends
 
 
 @router.post("/refresh", summary="Fetch today's prices and record the valuations")
-async def refresh(write: bool = True, force: bool = False, max_requests: int = 20, service: PortfolioService = Depends(get_portfolio_service)):
+def refresh(write: bool = True, force: bool = False, max_requests: int = 20, service: PortfolioService = Depends(get_portfolio_service)):
     """Pulls the daily closes (Alpha Vantage, 25 requests a day on the free plan) for every market-valued
     instrument not refreshed today, the exchange rates they need, then writes each broker's value as a ``market``
     balance on its securities account."""
@@ -113,5 +113,5 @@ async def refresh(write: bool = True, force: bool = False, max_requests: int = 2
 
 
 @router.post("/valuations", summary="Record today's valuations from the cached prices")
-async def valuations(service: PortfolioService = Depends(get_portfolio_service)):
+def valuations(service: PortfolioService = Depends(get_portfolio_service)):
     return service.write_valuations()

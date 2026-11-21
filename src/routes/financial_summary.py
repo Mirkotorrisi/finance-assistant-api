@@ -30,7 +30,7 @@ def get_financial_summary_service(workspace_id: int = Depends(resolve_workspace_
     summary="Monthly financial summary",
     response_description="Income, expenses, net, and top categories for the month",
 )
-async def get_monthly_summary(
+def get_monthly_summary(
     month: str,
     service: FinancialSummaryService = Depends(get_financial_summary_service),
 ):
@@ -47,7 +47,7 @@ async def get_monthly_summary(
     summary="Spending distribution",
     response_description="Spending breakdown by category or account for the given period",
 )
-async def get_spending_distribution(
+def get_spending_distribution(
     start_date: str,
     end_date: str,
     group_by: str = "category",
@@ -66,7 +66,7 @@ async def get_spending_distribution(
     summary="Account breakdown",
     response_description="Current balances grouped by asset type",
 )
-async def get_account_breakdown(
+def get_account_breakdown(
     service: FinancialSummaryService = Depends(get_financial_summary_service),
 ):
     """Return the current balance breakdown across all active accounts."""

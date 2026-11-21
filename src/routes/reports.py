@@ -21,7 +21,7 @@ def get_report_service(workspace_id: int = Depends(resolve_workspace_id)):
 
 
 @router.get("/spending", summary="Spending (or income) totals")
-async def spending_report(
+def spending_report(
     start_date: str,
     end_date: str,
     group_by: str = "category",
@@ -37,7 +37,7 @@ async def spending_report(
 
 
 @router.get("/category-usage", summary="Categories used by the transactions")
-async def category_usage(service: SpendingReportService = Depends(get_report_service)):
+def category_usage(service: SpendingReportService = Depends(get_report_service)):
     """Each category name found in the data, how many transactions use it and which blueprint category it maps to
     (``key`` is null when the blueprint does not know it). Transfers are excluded."""
     return service.category_usage()

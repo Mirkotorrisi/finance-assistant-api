@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from src.routes.deps import resolve_workspace_id
@@ -35,15 +35,18 @@ def get_transaction_service(workspace_id: int = Depends(resolve_workspace_id)):
     summary="List transactions",
     response_description="A list of transactions matching the given filters",
 )
-async def list_transactions(
+def list_transactions(
     category: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     account_id: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=1, le=5000, description="Page size (newest first); all rows when omitted"),
+    offset: int = Query(default=0, ge=0),
     service: TransactionService = Depends(get_transaction_service),
 ):
-    """Return a list of transactions, optionally filtered by category, date range, or account."""
-    return service.list_transactions(category, start_date, end_date, account_id)
+    """Return a list of transactions, newest first, optionally filtered by category, date range, or account.
+    ``limit``/``offset`` page through them; without ``limit`` every matching row is returned."""
+    return service.list_transactions(category, start_date, end_date, account_id, limit=limit, offset=offset)
 
 
 @router.post(
@@ -53,7 +56,7 @@ async def list_transactions(
     summary="Create a transaction",
     response_description="The newly created transaction",
 )
-async def create_transaction(
+def create_transaction(
     transaction: TransactionCreate,
     service: TransactionService = Depends(get_transaction_service),
 ):
@@ -78,7 +81,7 @@ async def create_transaction(
     summary="Bulk-create transactions",
     response_description="List of newly created transactions",
 )
-async def create_transactions_bulk(
+def create_transactions_bulk(
     transactions: List[TransactionCreate],
     service: TransactionService = Depends(get_transaction_service),
 ):
@@ -92,7 +95,7 @@ class CategoryRemap(BaseModel):
 
 
 @router.post("/remap-category", summary="Move all transactions of a category to another")
-async def remap_category(body: CategoryRemap, service: TransactionService = Depends(get_transaction_service)):
+def remap_category(body: CategoryRemap, service: TransactionService = Depends(get_transaction_service)):
     """Case-insensitive on the source. Use it after removing a category from the blueprint."""
     return service.remap_category(body.from_category, body.to_category)
 
@@ -103,7 +106,7 @@ async def remap_category(body: CategoryRemap, service: TransactionService = Depe
     summary="Bulk-update transaction categories",
     response_description="List of updated transactions",
 )
-async def bulk_update_categories(
+def bulk_update_categories(
     payload: BulkCategoryUpdate,
     service: TransactionService = Depends(get_transaction_service),
 ):
@@ -124,7 +127,7 @@ async def bulk_update_categories(
     summary="Update a transaction",
     response_description="The updated transaction",
 )
-async def update_transaction(
+def update_transaction(
     transaction_id: int,
     updates: TransactionUpdate,
     service: TransactionService = Depends(get_transaction_service),
@@ -141,7 +144,7 @@ async def update_transaction(
     summary="Delete a transaction",
     response_description="Confirmation message",
 )
-async def delete_transaction(
+def delete_transaction(
     transaction_id: int,
     service: TransactionService = Depends(get_transaction_service),
 ):
@@ -158,7 +161,7 @@ async def delete_transaction(
     summary="Get distinct categories",
     response_description="Sorted list of distinct transaction category names",
 )
-async def get_distinct_categories(service: TransactionService = Depends(get_transaction_service)):
+def get_distinct_categories(service: TransactionService = Depends(get_transaction_service)):
     """Return every distinct category name present in stored transactions."""
     return service.get_distinct_categories()
 
@@ -169,7 +172,7 @@ async def get_distinct_categories(service: TransactionService = Depends(get_tran
     summary="Get total balance",
     response_description="Sum of all transaction amounts",
 )
-async def get_balance(service: TransactionService = Depends(get_transaction_service)):
+def get_balance(service: TransactionService = Depends(get_transaction_service)):
     """The current total balance: each account's latest recorded balance (bank sync, typed, sheet) plus the
     transactions since it; accounts that never had one count their transactions."""
     return service.get_balance_details()

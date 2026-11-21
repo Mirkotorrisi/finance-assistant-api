@@ -14,7 +14,8 @@ def default_workspace_id(session: Session, owner_user_id: Optional[str] = None) 
     """The workspace a request without an explicit one belongs to.
 
     Preference: one owned by ``owner_user_id``; else the oldest unowned (legacy / single-user) one; else a new
-    "Personale" project is created (owned by ``owner_user_id`` when given).
+    "Personale" project is created (owned by ``owner_user_id`` when given). A caller without an identity is never
+    dropped into an owned project.
     """
     if owner_user_id:
         owned = session.query(Workspace).filter(Workspace.owner_user_id == owner_user_id).order_by(Workspace.id).first()
@@ -23,10 +24,7 @@ def default_workspace_id(session: Session, owner_user_id: Optional[str] = None) 
     shared = session.query(Workspace).filter(Workspace.owner_user_id.is_(None)).order_by(Workspace.id).first()
     if shared:
         return shared.id
-    if not owner_user_id:
-        any_ws = session.query(Workspace).order_by(Workspace.id).first()
-        if any_ws:
-            return any_ws.id
+    # No unowned project left: an anonymous caller gets a fresh unowned one, never somebody else's.
     return create_workspace(session, DEFAULT_WORKSPACE_NAME, owner_user_id=owner_user_id).id
 
 

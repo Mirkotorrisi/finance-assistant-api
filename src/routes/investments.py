@@ -19,7 +19,7 @@ def get_investment_service(workspace_id: int = Depends(resolve_workspace_id)):
 
 
 @router.get("", summary="Portfolio and realised result")
-async def portfolio(service: InvestmentService = Depends(get_investment_service)):
+def portfolio(service: InvestmentService = Depends(get_investment_service)):
     """Every instrument bought, sold or paid out in the blueprint's ``investment`` categories: amount invested,
     proceeds, dividends, quantity held and the realised gain or loss (average cost; ``null`` when a sale has no
     quantity to price it). There are no market prices, so unrealised gains are not included."""

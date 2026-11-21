@@ -12,10 +12,17 @@ class TransactionRepository:
              category: Optional[str] = None, 
              start_date: Optional[date] = None, 
              end_date: Optional[date] = None,
-             account_id: Optional[int] = None) -> List[Transaction]:
+             account_id: Optional[int] = None,
+             categories: Optional[List[str]] = None,
+             limit: Optional[int] = None,
+             offset: int = 0) -> List[Transaction]:
+        """Newest first. ``categories`` is the exact list of stored spellings to match (a blueprint category's key,
+        label and aliases); ``category`` a single case-insensitive text."""
         query = self.session.query(Transaction)
         
-        if category:
+        if categories is not None:
+            query = query.filter(Transaction.category.in_(categories))
+        elif category:
             query = query.filter(Transaction.category.ilike(category))
         if start_date:
             query = query.filter(Transaction.date >= start_date)
@@ -24,7 +31,12 @@ class TransactionRepository:
         if account_id is not None:
             query = query.filter(Transaction.account_id == account_id)
             
-        return query.order_by(Transaction.date.desc()).all()
+        query = query.order_by(Transaction.date.desc(), Transaction.id.desc())
+        if offset:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+        return query.all()
 
     def add(self, transaction: Transaction) -> Transaction:
         self.session.add(transaction)

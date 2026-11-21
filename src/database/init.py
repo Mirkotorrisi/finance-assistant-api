@@ -2,7 +2,8 @@
 
 import sys
 from typing import Generator, Optional
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
@@ -66,15 +67,20 @@ def init_database() -> None:
             print("Running in PRODUCTION mode - Skipping automatic table creation")
             
     except (OperationalError, Exception) as e:
+        if not DatabaseConfig.is_development():
+            # Serving an empty in-memory database in place of the real one would silently lose every write.
+            print(f"CRITICAL: Database initialization failed: {e}")
+            raise
         print(f"WARNING: Database initialization failed: {e}")
-        print("Falling back to in-memory SQLite storage...")
+        print("Falling back to in-memory SQLite storage (development only: data is lost on restart)...")
         
         try:
-            # Fallback to in-memory SQLite
+            # Fallback to in-memory SQLite. StaticPool: one shared connection, so every thread sees the same tables
+            # (sync route handlers run in a threadpool).
             engine = create_engine(
                 "sqlite:///:memory:",
                 connect_args={"check_same_thread": False},
-                poolclass=None,
+                poolclass=StaticPool,
                 echo=False
             )
             
@@ -98,9 +104,19 @@ def _init_sqlite_file() -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
         f"sqlite:///{path}",
-        connect_args={"check_same_thread": False},
+        # route handlers run in a threadpool and the price scheduler commits from its own thread: wait for a lock
+        # instead of failing with "database is locked"
+        connect_args={"check_same_thread": False, "timeout": 30},
         echo=False,
     )
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")  # readers do not block the writer and vice versa
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     upgrade_database(engine)
     _ensure_default_workspace()

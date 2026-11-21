@@ -13,8 +13,9 @@ def resolve_workspace_id(
 ) -> int:
     """``X-Workspace-Id`` if given, else the caller's default workspace.
 
-    ``X-User-Id`` is the lightweight client identity (no authentication yet): a workspace owned by someone
-    else is refused, an unowned (legacy) one is open to everybody.
+    ``X-User-Id`` is the lightweight client identity (no authentication yet): a workspace that has an owner is
+    refused unless the caller identifies as that owner (a missing header is not the owner), an unowned (legacy)
+    one is open to everybody.
     """
     from src.database.init import get_unscoped_session
     from src.database.models import Workspace
@@ -26,7 +27,7 @@ def resolve_workspace_id(
         workspace = session.get(Workspace, x_workspace_id)
         if workspace is None:
             raise HTTPException(status_code=404, detail=f"Workspace {x_workspace_id} not found")
-        if workspace.owner_user_id and x_user_id and workspace.owner_user_id != x_user_id:
+        if workspace.owner_user_id and workspace.owner_user_id != x_user_id:
             raise HTTPException(status_code=403, detail="This workspace belongs to another user")
         return workspace.id
     finally:

@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from typing import Any, Dict, Iterable, List, Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Account, ImportBatch, Transaction, Workspace
@@ -83,6 +84,7 @@ class ImportService:
         filename: Optional[str] = None,
         file_hash: Optional[str] = None,
         source: str = "statement",
+        _retry: bool = False,
     ) -> Dict[str, Any]:
         """Add the rows that are not already in the account; return what happened.
 
@@ -183,7 +185,15 @@ class ImportService:
             for i in to_add
         ]
         self.session.add_all(transactions)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            # another import (bank sync vs statement upload) stored one of these references meanwhile: start over,
+            # the dedupe now sees its rows. A second collision is reported rather than looped on.
+            self.session.rollback()
+            if _retry:
+                raise ImportRequestError(409, "Another import of the same rows is running; retry in a moment")
+            return self.import_transactions(account_id, rows, filename=filename, file_hash=file_hash, source=source, _retry=True)
 
         if self._detect_enabled():
             result["transfers_detected"] = len(self.detect_transfers(only_ids={t.id for t in transactions}))
@@ -354,9 +364,11 @@ class ImportService:
             row.duplicate_of = None
         elif action == "delete_this":
             # the statement row IS that bank movement: give it the bank's reference so later syncs recognise it
-            if twin is not None and row.external_id and not twin.external_id:
-                twin.external_id = row.external_id
+            reference = row.external_id
             self.session.delete(row)
+            self.session.flush()  # the reference is unique per account: the bank row must be gone before the twin takes it
+            if twin is not None and reference and not twin.external_id:
+                twin.external_id = reference
         elif action == "delete_twin":
             if twin is not None:
                 # the statement row may carry the user's category decision: keep it on the surviving row

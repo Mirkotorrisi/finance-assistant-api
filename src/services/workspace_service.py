@@ -7,8 +7,38 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.blueprint import Blueprint, diff_blueprints
-from src.database.models import Account, ImportBatch, MerchantRule, Transaction, Workspace
+from src.database.models import (
+    Account,
+    AdvisorDecision,
+    BalanceSnapshot,
+    BankAccountLink,
+    BankConnection,
+    ClientProfile,
+    ClientProfileVersion,
+    ImportBatch,
+    MerchantRule,
+    Transaction,
+    Workspace,
+)
+from src.database.scope import SCOPED_MODELS
 from src.database.workspaces import create_workspace
+
+
+# Deleting a workspace must empty every scoped table (``scope.SCOPED_MODELS``), children before their parents, or
+# Postgres refuses the delete and SQLite (foreign keys off) keeps orphans. A test checks this list stays complete.
+DELETE_ORDER = (
+    Transaction,
+    BalanceSnapshot,
+    BankAccountLink,
+    BankConnection,
+    ImportBatch,
+    MerchantRule,
+    ClientProfileVersion,
+    ClientProfile,
+    AdvisorDecision,
+    Account,
+)
+assert set(DELETE_ORDER) == set(SCOPED_MODELS), "every scoped model must be deleted with its workspace"
 
 
 class WorkspaceError(Exception):
@@ -31,7 +61,7 @@ class WorkspaceService:
         workspace = self.session.get(Workspace, workspace_id)
         if workspace is None:
             raise WorkspaceError(404, f"Workspace {workspace_id} not found")
-        if workspace.owner_user_id and self.user_id and workspace.owner_user_id != self.user_id:
+        if workspace.owner_user_id and workspace.owner_user_id != self.user_id:  # no user header: not the owner
             raise WorkspaceError(403, "This workspace belongs to another user")
         return workspace
 
@@ -41,6 +71,8 @@ class WorkspaceService:
         query = self.session.query(Workspace)
         if self.user_id:  # own projects and unowned (legacy) ones
             query = query.filter((Workspace.owner_user_id == self.user_id) | (Workspace.owner_user_id.is_(None)))
+        else:  # anonymous caller: only the unowned ones
+            query = query.filter(Workspace.owner_user_id.is_(None))
         return [w.to_dict() for w in query.order_by(Workspace.id).all()]
 
     def get(self, workspace_id: int) -> Dict[str, Any]:
@@ -68,7 +100,7 @@ class WorkspaceService:
         }
         if any(counts.values()) and not force:
             raise WorkspaceError(409, f"Workspace has data {counts}; pass force=true to delete it with its data")
-        for model in (Transaction, ImportBatch, MerchantRule, Account):  # children before parents
+        for model in DELETE_ORDER:  # children before parents, every table that carries a workspace_id
             self.session.query(model).filter(model.workspace_id == workspace_id).delete()
         self.session.delete(workspace)
         self.session.commit()

@@ -25,7 +25,7 @@ def get_preferences_service():
     summary="Get a user's onboarding preferences",
     response_description="The user's preferences (auto-created if missing)",
 )
-async def get_preferences(
+def get_preferences(
     user_id: str,
     service: UserPreferencesService = Depends(get_preferences_service),
 ):
@@ -39,7 +39,7 @@ async def get_preferences(
     summary="Partially update a user's onboarding preferences",
     response_description="The updated preferences",
 )
-async def update_preferences(
+def update_preferences(
     user_id: str,
     updates: UserPreferencesUpdate,
     service: UserPreferencesService = Depends(get_preferences_service),
@@ -54,7 +54,7 @@ async def update_preferences(
     summary="Confirm onboarding for a user",
     response_description="The preferences marked as onboarding_completed",
 )
-async def confirm_preferences(
+def confirm_preferences(
     user_id: str,
     service: UserPreferencesService = Depends(get_preferences_service),
 ):

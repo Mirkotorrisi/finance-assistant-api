@@ -10,6 +10,6 @@ router = APIRouter(tags=["health"])
     summary="Health check",
     response_description="API health status",
 )
-async def health():
+def health():
     """Return a simple status object confirming the API is running."""
     return {"status": "healthy"}

@@ -1,7 +1,7 @@
 """Database models using SQLAlchemy ORM."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, JSON, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Boolean, Index, JSON, Text, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -517,6 +517,19 @@ class Transaction(Base):
 
     # Foreign key (optional - category can be free text or reference to categories table)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+
+    # The bank's reference is unique per account: the import checks before inserting, this makes two imports
+    # running at once (bank sync and a statement upload) unable to both insert the same movement.
+    __table_args__ = (
+        Index(
+            "uix_transactions_account_external_id",
+            "account_id",
+            "external_id",
+            unique=True,
+            sqlite_where=text("external_id IS NOT NULL"),
+            postgresql_where=text("external_id IS NOT NULL"),
+        ),
+    )
     
     # Relationships
     category_rel = relationship("Category", back_populates="transactions")

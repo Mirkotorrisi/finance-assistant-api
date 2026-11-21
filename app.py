@@ -52,7 +52,26 @@ from src.database.init import close_database, init_database
 from src.market.scheduler import scheduler as price_scheduler
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # its INFO line prints full URLs, API keys included
 logger = logging.getLogger(__name__)
+
+
+def cors_origins() -> list:
+    """Browser origins allowed to call this service.
+
+    ``FINANCE_CORS_ORIGINS`` (comma-separated) wins; else the UI's URL (``FINANCE_UI_URL``, set by the launcher) in
+    both its ``localhost`` and ``127.0.0.1`` spellings; else the UI's default port. Never ``*``: the services carry
+    no authentication, so any web page allowed through could read and change the user's data.
+    """
+    explicit = os.getenv("FINANCE_CORS_ORIGINS", "").strip()
+    if explicit:
+        return [o.strip().rstrip("/") for o in explicit.split(",") if o.strip()]
+    ui_url = os.getenv("FINANCE_UI_URL", "http://localhost:3000").rstrip("/")
+    origins = {ui_url}
+    for a, b in (("localhost", "127.0.0.1"), ("127.0.0.1", "localhost")):
+        if f"//{a}:" in ui_url or ui_url.endswith(f"//{a}"):
+            origins.add(ui_url.replace(f"//{a}", f"//{b}", 1))
+    return sorted(origins)
 
 
 @asynccontextmanager
@@ -140,8 +159,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins(),
+    allow_credentials=False,  # identity travels in X-User-Id, not in cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )

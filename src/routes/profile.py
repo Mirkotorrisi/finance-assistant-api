@@ -39,21 +39,21 @@ def get_advisor_service(workspace_id: int = Depends(resolve_workspace_id)):
 
 
 @router.get("/workspaces/current/profile", response_model=ProfileResponse, summary="The client profile of the current project")
-async def get_profile(service: ProfileService = Depends(get_profile_service)):
+def get_profile(service: ProfileService = Depends(get_profile_service)):
     """Situation, goals, risk and investment policy, with ``completeness`` (which interview blocks are filled) and
     ``ips_status``: ``none`` (no policy), ``pending`` (changed since the user approved it) or ``approved``."""
     return service.get()
 
 
 @router.put("/workspaces/current/profile", response_model=ProfileResponse, summary="Replace the client profile")
-async def put_profile(profile: ClientProfile, source: str = "user", service: ProfileService = Depends(get_profile_service)):
+def put_profile(profile: ClientProfile, source: str = "user", service: ProfileService = Depends(get_profile_service)):
     if source not in ("user", "agent"):
         raise HTTPException(status_code=400, detail="source must be 'user' or 'agent'")
     return service.replace(profile, source)
 
 
 @router.patch("/workspaces/current/profile", response_model=ProfileResponse, summary="Update part of the client profile")
-async def patch_profile(body: ProfilePatch, service: ProfileService = Depends(get_profile_service)):
+def patch_profile(body: ProfilePatch, service: ProfileService = Depends(get_profile_service)):
     """Merge a partial document: nested fields merge, goals and debts are upserted by ``key``, everything else is
     replaced. The result must validate as a whole profile (422 otherwise)."""
     try:
@@ -63,12 +63,12 @@ async def patch_profile(body: ProfilePatch, service: ProfileService = Depends(ge
 
 
 @router.get("/workspaces/current/profile/versions", summary="Past versions of the profile")
-async def profile_versions(service: ProfileService = Depends(get_profile_service)) -> dict[str, Any]:
+def profile_versions(service: ProfileService = Depends(get_profile_service)) -> dict[str, Any]:
     return {"versions": service.versions()}
 
 
 @router.post("/workspaces/current/profile/ips/approve", response_model=ProfileResponse, summary="Approve the investment policy")
-async def approve_ips(service: ProfileService = Depends(get_profile_service)):
+def approve_ips(service: ProfileService = Depends(get_profile_service)):
     """Binds the approval to the current policy text: a later change makes it ``pending`` again. The app's
     Advisor page calls this; agents must not."""
     try:
@@ -78,7 +78,7 @@ async def approve_ips(service: ProfileService = Depends(get_profile_service)):
 
 
 @router.post("/profiles/validate", summary="Validate a profile document without saving it")
-async def validate_profile(profile: ClientProfile) -> dict[str, Any]:
+def validate_profile(profile: ClientProfile) -> dict[str, Any]:
     return {"valid": True, "profile": profile.to_json(), "completeness": profile.completeness(), "ips_fingerprint": profile.ips.fingerprint()}
 
 
@@ -86,7 +86,7 @@ async def validate_profile(profile: ClientProfile) -> dict[str, Any]:
 
 
 @router.get("/advisor/decisions", summary="The advisor's decision log")
-async def list_decisions(status: str | None = None, service: ProfileService = Depends(get_profile_service)) -> list[dict[str, Any]]:
+def list_decisions(status: str | None = None, service: ProfileService = Depends(get_profile_service)) -> list[dict[str, Any]]:
     try:
         return service.list_decisions(status)
     except ValueError as exc:
@@ -94,7 +94,7 @@ async def list_decisions(status: str | None = None, service: ProfileService = De
 
 
 @router.post("/advisor/decisions", status_code=201, summary="Log a recommendation")
-async def log_decision(body: DecisionCreate, service: ProfileService = Depends(get_profile_service)) -> dict[str, Any]:
+def log_decision(body: DecisionCreate, service: ProfileService = Depends(get_profile_service)) -> dict[str, Any]:
     """A decision must name the figures it rests on (``data_refs``) and, when there is a policy, the IPS points it
     follows (``ips_refs``)."""
     try:
@@ -104,7 +104,7 @@ async def log_decision(body: DecisionCreate, service: ProfileService = Depends(g
 
 
 @router.put("/advisor/decisions/{decision_id}", summary="Update a decision's status or outcome")
-async def update_decision(decision_id: int, body: DecisionUpdate, service: ProfileService = Depends(get_profile_service)) -> dict[str, Any]:
+def update_decision(decision_id: int, body: DecisionUpdate, service: ProfileService = Depends(get_profile_service)) -> dict[str, Any]:
     try:
         return service.update_decision(decision_id, body.model_dump(exclude_none=True))
     except LookupError as exc:
@@ -117,7 +117,7 @@ async def update_decision(decision_id: int, body: DecisionUpdate, service: Profi
 
 
 @router.get("/advisor/review", summary="Everything an advisor needs for a review, in one call")
-async def advisor_review(months: int = 12, service: AdvisorService = Depends(get_advisor_service)) -> dict[str, Any]:
+def advisor_review(months: int = 12, service: AdvisorService = Depends(get_advisor_service)) -> dict[str, Any]:
     """Profile and IPS status, cash flow of the last ``months``, net worth, investments, emergency fund against its
     target, debts, the measurable allocation drift and the checks that fail, each with its figures. Not advice:
     the material advice must cite."""

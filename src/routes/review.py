@@ -42,23 +42,23 @@ def _guard(call):
 
 
 @router.get("/queue", summary="Unconfirmed categories, grouped by merchant")
-async def queue(limit: int = 50, service: ReviewService = Depends(get_review_service)):
+def queue(limit: int = 50, service: ReviewService = Depends(get_review_service)):
     """Biggest amounts first. Each group carries the category currently assigned (the suggestion) and how sure it was."""
     return service.queue(limit)
 
 
 @router.post("/confirm", summary="Set a merchant's category and remember it")
-async def confirm(body: ConfirmRequest, service: ReviewService = Depends(get_review_service)):
+def confirm(body: ConfirmRequest, service: ReviewService = Depends(get_review_service)):
     """Applies to every unconfirmed transaction of the merchant and, by default, saves a rule for the future."""
     return _guard(lambda: service.confirm(body.merchant_key, body.category, body.create_rule))
 
 
 @router.post("/accept", summary="Confirm categories as they are")
-async def accept(body: AcceptRequest, service: ReviewService = Depends(get_review_service)):
+def accept(body: AcceptRequest, service: ReviewService = Depends(get_review_service)):
     """The suggestion was right: mark a merchant's (or the given) transactions as confirmed without changing them."""
     return _guard(lambda: service.accept(body.merchant_key, body.transaction_ids, body.all_unreviewed, body.create_rule))
 
 
 @router.get("/coverage", summary="How much spending rests on confirmed categories")
-async def coverage(flow: str = "expense", service: ReviewService = Depends(get_review_service)):
+def coverage(flow: str = "expense", service: ReviewService = Depends(get_review_service)):
     return service.coverage(flow)

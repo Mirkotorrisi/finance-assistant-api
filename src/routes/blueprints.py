@@ -11,12 +11,12 @@ router = APIRouter(prefix="/api", tags=["blueprints"])
 
 
 @router.get("/blueprint-templates", summary="List starter blueprints")
-async def templates(locale: str = Query(default=DEFAULT_LOCALE, description=f"One of {', '.join(LOCALES)}")) -> List[Dict[str, str]]:
+def templates(locale: str = Query(default=DEFAULT_LOCALE, description=f"One of {', '.join(LOCALES)}")) -> List[Dict[str, str]]:
     return list_templates(locale)
 
 
 @router.get("/blueprint-templates/{key}", summary="A starter blueprint")
-async def template(key: str, locale: str = DEFAULT_LOCALE) -> Dict[str, Any]:
+def template(key: str, locale: str = DEFAULT_LOCALE) -> Dict[str, Any]:
     """A complete blueprint document to adapt; it is not saved anywhere."""
     try:
         return build_template(key, locale).to_json()
@@ -25,7 +25,7 @@ async def template(key: str, locale: str = DEFAULT_LOCALE) -> Dict[str, Any]:
 
 
 @router.post("/blueprints/validate", summary="Validate a blueprint without saving it")
-async def validate(blueprint: Blueprint) -> Dict[str, Any]:
+def validate(blueprint: Blueprint) -> Dict[str, Any]:
     """Returns the normalised document (defaults filled in) and its size. Invalid documents get a 422 saying why."""
     nodes = blueprint.nodes()
     return {

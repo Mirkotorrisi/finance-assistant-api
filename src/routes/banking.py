@@ -26,7 +26,7 @@ def get_banking_service(workspace_id: int = Depends(resolve_workspace_id)):
 
 
 @router.get("/bank-connections/due", summary="Connections to sync (every workspace)")
-async def due_connections(max_age_hours: float = 12) -> list[dict[str, Any]]:
+def due_connections(max_age_hours: float = 12) -> list[dict[str, Any]]:
     """For the gateway's scheduler: active connections whose last sync is older than ``max_age_hours``."""
     from src.database.init import get_unscoped_session
 
@@ -38,7 +38,7 @@ async def due_connections(max_age_hours: float = 12) -> list[dict[str, Any]]:
 
 
 @router.get("/bank-connections/expiring", summary="Consents about to expire (every workspace)")
-async def expiring_connections(within_days: int = 14) -> list[dict[str, Any]]:
+def expiring_connections(within_days: int = 14) -> list[dict[str, Any]]:
     from src.database.init import get_unscoped_session
 
     session = get_unscoped_session()
@@ -49,14 +49,14 @@ async def expiring_connections(within_days: int = 14) -> list[dict[str, Any]]:
 
 
 @router.get("/bank-connections", summary="The bank connections of the current project")
-async def list_connections(service: BankingService = Depends(get_banking_service)) -> list[dict[str, Any]]:
+def list_connections(service: BankingService = Depends(get_banking_service)) -> list[dict[str, Any]]:
     """Each connection carries its bank, status, consent validity, last sync and the bank accounts it exposes
     with the app account each one feeds (``account_id``, null = not linked yet)."""
     return service.list()
 
 
 @router.post("/bank-connections", status_code=201, summary="Register a consent")
-async def create_connection(body: BankConnectionCreate, service: BankingService = Depends(get_banking_service)) -> dict[str, Any]:
+def create_connection(body: BankConnectionCreate, service: BankingService = Depends(get_banking_service)) -> dict[str, Any]:
     try:
         return service.create(body.model_dump(mode="python"))
     except LookupError as exc:
@@ -64,7 +64,7 @@ async def create_connection(body: BankConnectionCreate, service: BankingService 
 
 
 @router.put("/bank-connections/{connection_id}", summary="Update a connection's settings or sync state")
-async def update_connection(connection_id: int, body: BankConnectionUpdate, service: BankingService = Depends(get_banking_service)) -> dict[str, Any]:
+def update_connection(connection_id: int, body: BankConnectionUpdate, service: BankingService = Depends(get_banking_service)) -> dict[str, Any]:
     try:
         return service.update(connection_id, body.model_dump(exclude_unset=True))
     except LookupError as exc:
@@ -74,7 +74,7 @@ async def update_connection(connection_id: int, body: BankConnectionUpdate, serv
 
 
 @router.delete("/bank-connections/{connection_id}", summary="Forget a connection")
-async def delete_connection(connection_id: int, service: BankingService = Depends(get_banking_service)) -> dict[str, str]:
+def delete_connection(connection_id: int, service: BankingService = Depends(get_banking_service)) -> dict[str, str]:
     """Removes the connection and its account links; transactions and balances already imported stay. The
     gateway revokes the consent at the bank before calling this."""
     try:
@@ -85,7 +85,7 @@ async def delete_connection(connection_id: int, service: BankingService = Depend
 
 
 @router.put("/bank-connections/{connection_id}/links/{link_id}", summary="Map a bank account to an app account")
-async def update_link(connection_id: int, link_id: int, body: BankAccountLinkUpdate, service: BankingService = Depends(get_banking_service)) -> dict[str, Any]:
+def update_link(connection_id: int, link_id: int, body: BankAccountLinkUpdate, service: BankingService = Depends(get_banking_service)) -> dict[str, Any]:
     """Pick the app account this bank account feeds (``account_id``), create one (``create_account``), detach it
     (``unlink``) or enable/disable the sync of this account."""
     try:
