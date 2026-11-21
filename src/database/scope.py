@@ -12,6 +12,8 @@ from src.database.models import (
     Account,
     AdvisorDecision,
     BalanceSnapshot,
+    BankAccountLink,
+    BankConnection,
     ClientProfile,
     ClientProfileVersion,
     ImportBatch,
@@ -28,6 +30,8 @@ SCOPED_MODELS = (
     ClientProfile,
     ClientProfileVersion,
     AdvisorDecision,
+    BankConnection,
+    BankAccountLink,
 )
 
 

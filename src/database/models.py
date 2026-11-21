@@ -211,6 +211,103 @@ class AdvisorDecision(Base):
         }
 
 
+class BankConnection(Base):
+    """A PSD2 consent given to one bank (ASPSP) through the aggregator, and what we know about syncing it.
+
+    The aggregator's session id (what actually grants access) is NOT here: the gateway keeps it encrypted under
+    ``session_ref``. This row holds the metadata the app shows (bank, validity, last sync) and the sync settings.
+    """
+
+    __tablename__ = "bank_connections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, default="enablebanking")
+    aspsp_name = Column(String(120), nullable=False)
+    aspsp_country = Column(String(2), nullable=False)
+    psu_type = Column(String(16), nullable=False, default="personal")
+    session_ref = Column(String(64), nullable=False, unique=True)
+    status = Column(String(16), nullable=False, default="active")  # active | expired | revoked | error
+    valid_until = Column(DateTime, nullable=True)
+    sync_balances = Column(Boolean, nullable=False, default=True)
+    sync_transactions = Column(Boolean, nullable=False, default=True)
+    last_sync_at = Column(DateTime, nullable=True)
+    last_sync_status = Column(String(16), nullable=True)  # ok | partial | error | rate_limited | expired
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    links = relationship("BankAccountLink", back_populates="connection", cascade="all, delete-orphan")
+
+    def to_dict(self, include_links: bool = True):
+        data = {
+            "id": self.id,
+            "provider": self.provider,
+            "aspsp_name": self.aspsp_name,
+            "aspsp_country": self.aspsp_country,
+            "psu_type": self.psu_type,
+            "session_ref": self.session_ref,
+            "status": self.status,
+            "valid_until": self.valid_until.isoformat() if self.valid_until else None,
+            "sync_balances": bool(self.sync_balances),
+            "sync_transactions": bool(self.sync_transactions),
+            "last_sync_at": self.last_sync_at.isoformat() if self.last_sync_at else None,
+            "last_sync_status": self.last_sync_status,
+            "last_error": self.last_error,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_links:
+            data["accounts"] = [link.to_dict() for link in sorted(self.links, key=lambda l: l.id)]
+        return data
+
+
+class BankAccountLink(Base):
+    """One account the bank exposes under a connection, and the app account it feeds (if any).
+
+    ``identification_hash`` is the bank's stable identity of the account across consents; ``bank_uid`` is the
+    per-session handle the API calls use and is refreshed on every renewal.
+    """
+
+    __tablename__ = "bank_account_links"
+    __table_args__ = (UniqueConstraint("connection_id", "identification_hash", name="uix_bank_account_links_conn_hash"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    connection_id = Column(Integer, ForeignKey("bank_connections.id"), nullable=False, index=True)
+    identification_hash = Column(String(128), nullable=False)
+    bank_uid = Column(String(64), nullable=True)
+    iban_masked = Column(String(40), nullable=True)
+    label = Column(String(200), nullable=True)  # product / holder name as the bank gives it
+    currency = Column(String(3), nullable=True)
+    cash_account_type = Column(String(8), nullable=True)  # CACC | CARD | CASH | LOAN | OTHR | SVGS
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True, index=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_transaction_date = Column(Date, nullable=True)
+    last_balance = Column(Float, nullable=True)
+    last_balance_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    connection = relationship("BankConnection", back_populates="links")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "connection_id": self.connection_id,
+            "identification_hash": self.identification_hash,
+            "bank_uid": self.bank_uid,
+            "iban_masked": self.iban_masked,
+            "label": self.label,
+            "currency": self.currency,
+            "cash_account_type": self.cash_account_type,
+            "account_id": self.account_id,
+            "enabled": bool(self.enabled),
+            "last_transaction_date": self.last_transaction_date.isoformat() if self.last_transaction_date else None,
+            "last_balance": self.last_balance,
+            "last_balance_date": self.last_balance_date.isoformat() if self.last_balance_date else None,
+        }
+
+
 class Category(Base):
     """Category model for transaction categories."""
     
@@ -331,6 +428,13 @@ class Transaction(Base):
     # Money moved between the user's own accounts (incl. credit-card payments): not spending, not income
     is_transfer = Column(Boolean, nullable=False, default=False)
     transfer_pair_id = Column(Integer, nullable=True)
+    # Where the row came from ('statement' upload, 'bank' API sync, 'manual', 'adjustment') and the bank's own
+    # reference for it when the bank gave one: rows with the same (account, external_id) are the same movement.
+    source = Column(String(16), nullable=False, default="statement")
+    external_id = Column(String(128), nullable=True, index=True)
+    # A bank-synced row that looks like a statement row already stored (same account, amount, date within a few
+    # days) but could not be matched exactly: kept, and pointed at the suspect twin for the user to settle.
+    duplicate_of = Column(Integer, nullable=True)
 
     # Foreign key (optional - category can be free text or reference to categories table)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
@@ -363,4 +467,7 @@ class Transaction(Base):
             "is_transfer": bool(self.is_transfer),
             "transfer_pair_id": self.transfer_pair_id,
             "import_batch_id": self.import_batch_id,
+            "source": self.source or "statement",
+            "external_id": self.external_id,
+            "duplicate_of": self.duplicate_of,
         }

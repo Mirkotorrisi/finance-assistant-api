@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.models.imports import ImportRequest, ImportResult, PairRequest
+from src.models.imports import ResolveSuspectRequest, ImportRequest, ImportResult, PairRequest
 from src.routes.deps import resolve_workspace_id
 from src.services.import_service import ImportRequestError, ImportService
 
@@ -37,9 +37,21 @@ async def import_statement(body: ImportRequest, service: ImportService = Depends
     """
     return _guard(
         lambda: service.import_transactions(
-            body.account_id, [r.model_dump() for r in body.transactions], body.filename, body.file_hash
+            body.account_id, [r.model_dump() for r in body.transactions], body.filename, body.file_hash, body.source
         )
     )
+
+
+@router.get("/api/imports/suspects", summary="Bank rows that may duplicate a statement row")
+async def list_suspects(service: ImportService = Depends(get_import_service)) -> List[Dict[str, Any]]:
+    """Each item has the bank-synced ``transaction`` and the stored ``twin`` it resembles (same account and amount,
+    a few days apart, different wording). Settle them with the resolve endpoint."""
+    return service.list_suspects()
+
+
+@router.post("/api/imports/suspects/{transaction_id}/resolve", summary="Settle a suspect duplicate")
+async def resolve_suspect(transaction_id: int, body: ResolveSuspectRequest, service: ImportService = Depends(get_import_service)):
+    return _guard(lambda: service.resolve_suspect(transaction_id, body.action))
 
 
 @router.get("/api/imports", summary="List imports")

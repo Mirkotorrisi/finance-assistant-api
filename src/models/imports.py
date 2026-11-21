@@ -16,6 +16,9 @@ class ImportRow(BaseModel):
         description="Who chose the category: file (the bank's column), rule, ai, fallback or user. Default file.",
     )
     confidence: Optional[float] = Field(default=None, ge=0, le=1, description="Confidence of an AI-chosen category.")
+    external_id: Optional[str] = Field(
+        default=None, max_length=128, description="The bank's own reference of the movement (bank API syncs)."
+    )
 
 
 class ImportRequest(BaseModel):
@@ -23,6 +26,11 @@ class ImportRequest(BaseModel):
     transactions: List[ImportRow]
     filename: Optional[str] = None
     file_hash: Optional[str] = Field(default=None, description="sha256 of the uploaded file, to flag re-uploads.")
+    source: str = Field(default="statement", description="statement (upload), bank (API sync) or manual.")
+
+
+class ResolveSuspectRequest(BaseModel):
+    action: str = Field(..., description="keep_both | delete_this | delete_twin")
 
 
 class ImportResult(BaseModel):
@@ -33,6 +41,7 @@ class ImportResult(BaseModel):
     invalid_rows: List[str] = []
     duplicate_file: bool = False
     transfers_detected: int = 0
+    suspect_duplicates: int = 0
     transactions: List[Dict[str, Any]] = []
 
 

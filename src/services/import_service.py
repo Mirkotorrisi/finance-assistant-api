@@ -22,6 +22,10 @@ _IN_CHUNK = 500
 # 'user' and 'rule' decisions are confirmed; the rest are suggestions waiting for review
 SOURCES = ("file", "rule", "ai", "fallback", "user")
 CONFIRMED_SOURCES = ("user", "rule")
+# where a row came from: a statement the user uploaded, a bank API sync, a manual entry
+ROW_SOURCES = ("statement", "bank", "manual")
+# a bank-synced row with the same amount within this many days of a statement row is a suspect twin
+SUSPECT_DAY_GAP = 3
 
 
 class ImportRequestError(Exception):
@@ -51,6 +55,7 @@ def _parse_row(index: int, row: Dict[str, Any]) -> Dict[str, Any]:
     if source not in SOURCES:
         raise ValueError(f"row {index}: category_source must be one of {', '.join(SOURCES)}")
     confidence = row.get("confidence")
+    external_id = row.get("external_id")
     return {
         "date": day,
         "amount": amount,
@@ -59,6 +64,7 @@ def _parse_row(index: int, row: Dict[str, Any]) -> Dict[str, Any]:
         "currency": (str(row.get("currency") or "EUR").strip() or "EUR")[:3].upper(),
         "category_source": source,
         "confidence": float(confidence) if confidence is not None else None,
+        "external_id": (str(external_id).strip()[:128] or None) if external_id is not None else None,
     }
 
 
@@ -75,16 +81,24 @@ class ImportService:
         rows: List[Dict[str, Any]],
         filename: Optional[str] = None,
         file_hash: Optional[str] = None,
+        source: str = "statement",
     ) -> Dict[str, Any]:
         """Add the rows that are not already in the account; return what happened.
 
         Rows are compared as a multiset: if a statement lists two identical rows and one is already stored, one is
         added. Re-importing an overlapping statement therefore never duplicates, and two real identical purchases
         are never collapsed into one.
+
+        Rows that carry the bank's ``external_id`` are matched on it first (exact), then by fingerprint. A bank row
+        that matches neither but has the same amount as a stored row without external_id within a few days is
+        still added and marked ``duplicate_of`` that row: the bank and the statement may word the same movement
+        differently, and only the user can tell.
         """
         account = self.session.get(Account, account_id)
         if account is None:
             raise ImportRequestError(404, f"Account {account_id} not found in this workspace")
+        if source not in ROW_SOURCES:
+            raise ImportRequestError(400, f"source must be one of {', '.join(ROW_SOURCES)}")
 
         parsed: List[Dict[str, Any]] = []
         invalid: List[str] = []
@@ -98,13 +112,20 @@ class ImportService:
                 self.workspace_id, account_id, item["date"], item["amount"], item["description"]
             )
 
+        known_external = self._stored_external_ids(account_id, {p["external_id"] for p in parsed if p["external_id"]})
         stored = self._stored_counts({p["fingerprint"] for p in parsed})
         seen: Counter = Counter()
+        seen_external: set = set()
         to_add: List[Dict[str, Any]] = []
         for item in parsed:
+            if item["external_id"]:
+                if item["external_id"] in known_external or item["external_id"] in seen_external:
+                    continue
+                seen_external.add(item["external_id"])
             seen[item["fingerprint"]] += 1
             if seen[item["fingerprint"]] > stored.get(item["fingerprint"], 0):
                 to_add.append(item)
+        suspects = self._suspect_twins(account_id, [i for i in to_add if i["external_id"]])
 
         duplicate_file = bool(
             file_hash
@@ -119,6 +140,7 @@ class ImportService:
             "invalid_rows": invalid,
             "duplicate_file": duplicate_file,
             "transfers_detected": 0,
+            "suspect_duplicates": len(suspects),
             "transactions": [],
         }
         if not to_add:
@@ -140,6 +162,7 @@ class ImportService:
                 import_batch_id=batch.id, merchant_key=merchant_key(i["description"]),
                 category_source=i["category_source"], confidence=i["confidence"],
                 reviewed=i["category_source"] in CONFIRMED_SOURCES,
+                source=source, external_id=i["external_id"], duplicate_of=suspects.get(id(i)),
             )
             for i in to_add
         ]
@@ -153,6 +176,92 @@ class ImportService:
         result["batch_id"] = batch.id
         result["transactions"] = [t.to_dict() for t in transactions]
         return result
+
+    def _stored_external_ids(self, account_id: int, external_ids: Iterable[str]) -> set:
+        wanted = list(external_ids)
+        found: set = set()
+        for start in range(0, len(wanted), _IN_CHUNK):
+            chunk = wanted[start:start + _IN_CHUNK]
+            rows = (
+                self.session.query(Transaction.external_id)
+                .filter(Transaction.account_id == account_id, Transaction.external_id.in_(chunk))
+                .all()
+            )
+            found.update(r[0] for r in rows)
+        return found
+
+    def _suspect_twins(self, account_id: int, items: List[Dict[str, Any]]) -> Dict[int, int]:
+        """For bank rows about to be added: the id of a stored row of the same account and amount, without an
+        external_id, within SUSPECT_DAY_GAP days, not already claimed. Keyed by ``id(item)``."""
+        if not items:
+            return {}
+        first = min(i["date"] for i in items) - datetime.timedelta(days=SUSPECT_DAY_GAP)
+        last = max(i["date"] for i in items) + datetime.timedelta(days=SUSPECT_DAY_GAP)
+        candidates = (
+            self.session.query(Transaction)
+            .filter(
+                Transaction.account_id == account_id,
+                Transaction.external_id.is_(None),
+                Transaction.date >= first,
+                Transaction.date <= last,
+            )
+            .all()
+        )
+        claimed = {
+            r[0] for r in self.session.query(Transaction.duplicate_of).filter(Transaction.duplicate_of.isnot(None)).all()
+        }
+        by_amount: Dict[float, List[Transaction]] = defaultdict(list)
+        for c in candidates:
+            if c.id not in claimed:
+                by_amount[round(c.amount, 2)].append(c)
+        out: Dict[int, int] = {}
+        for item in sorted(items, key=lambda i: i["date"]):
+            pool = by_amount.get(round(item["amount"], 2)) or []
+            match = min(
+                (c for c in pool if abs((c.date - item["date"]).days) <= SUSPECT_DAY_GAP),
+                key=lambda c: (abs((c.date - item["date"]).days), c.id),
+                default=None,
+            )
+            if match is not None:
+                out[id(item)] = match.id
+                pool.remove(match)
+        return out
+
+    def list_suspects(self) -> List[Dict[str, Any]]:
+        """Bank rows pointing at a statement row they may duplicate, with both sides."""
+        rows = self.session.query(Transaction).filter(Transaction.duplicate_of.isnot(None)).order_by(Transaction.date.desc()).all()
+        out = []
+        for row in rows:
+            twin = self.session.get(Transaction, row.duplicate_of)
+            if twin is None:
+                row.duplicate_of = None
+                continue
+            out.append({"transaction": row.to_dict(), "twin": twin.to_dict()})
+        self.session.commit()
+        return out
+
+    def resolve_suspect(self, transaction_id: int, action: str) -> Dict[str, Any]:
+        """``keep_both`` (two real movements), ``delete_this`` (the bank row is the twin: drop it) or
+        ``delete_twin`` (drop the statement row, keep the bank row with its external_id)."""
+        row = self.session.get(Transaction, transaction_id)
+        if row is None or row.duplicate_of is None:
+            raise ImportRequestError(404, f"Transaction {transaction_id} is not a suspect duplicate")
+        twin = self.session.get(Transaction, row.duplicate_of)
+        if action == "keep_both":
+            row.duplicate_of = None
+        elif action == "delete_this":
+            self.session.delete(row)
+        elif action == "delete_twin":
+            if twin is not None:
+                # the statement row may carry the user's category decision: keep it on the surviving row
+                if twin.reviewed and not row.reviewed:
+                    row.category, row.category_source, row.reviewed, row.confidence = twin.category, twin.category_source, True, None
+                self.session.delete(twin)
+            row.duplicate_of = None
+        else:
+            raise ImportRequestError(400, "action must be keep_both, delete_this or delete_twin")
+        self.session.commit()
+        return {"resolved": transaction_id, "action": action}
 
     def _stored_counts(self, fingerprints: Iterable[str]) -> Dict[str, int]:
         wanted = list(fingerprints)
