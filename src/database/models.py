@@ -138,6 +138,79 @@ class BalanceSnapshot(Base):
         }
 
 
+class ClientProfile(Base):
+    """The advisor's memory of the person behind a workspace: situation, goals, risk and the agreed investment policy.
+
+    One row per workspace; ``document`` is validated by ``src.profile.ClientProfile``. Every save bumps ``version``
+    and keeps the previous document in ``client_profile_versions``. The IPS approval is bound to a hash of the
+    policy's content: a rewritten policy is pending until the user approves it again from the app.
+    """
+
+    __tablename__ = "client_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, unique=True, index=True)
+    document = Column(JSON, nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    updated_by = Column(String(16), nullable=False, default="user")  # user | agent
+    ips_approved_at = Column(DateTime, nullable=True)
+    ips_approved_hash = Column(String(32), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ClientProfileVersion(Base):
+    """A past state of a client profile (what the advisor knew when a decision was taken)."""
+
+    __tablename__ = "client_profile_versions"
+    __table_args__ = (UniqueConstraint("workspace_id", "version", name="uix_client_profile_versions_ws_version"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    document = Column(JSON, nullable=False)
+    source = Column(String(16), nullable=False, default="user")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AdvisorDecision(Base):
+    """A recommendation and what became of it: the advisor's decision log.
+
+    ``data_refs`` names the figures the advice rests on (tool, period, amount), ``ips_refs`` the policy points it
+    follows; both are required, so an advice without evidence cannot be logged.
+    """
+
+    __tablename__ = "advisor_decisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    rationale = Column(Text, nullable=False)
+    data_refs = Column(JSON, nullable=False, default=list)
+    ips_refs = Column(JSON, nullable=False, default=list)
+    status = Column(String(16), nullable=False, default="proposed")  # proposed | accepted | rejected | done
+    profile_version = Column(Integer, nullable=True)
+    outcome = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "date": self.date.isoformat() if self.date else None,
+            "title": self.title,
+            "rationale": self.rationale,
+            "data_refs": self.data_refs or [],
+            "ips_refs": self.ips_refs or [],
+            "status": self.status,
+            "profile_version": self.profile_version,
+            "outcome": self.outcome,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Category(Base):
     """Category model for transaction categories."""
     
