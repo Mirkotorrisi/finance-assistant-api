@@ -33,6 +33,11 @@ class ResolveSuspectRequest(BaseModel):
     action: str = Field(..., description="keep_both | delete_this | delete_twin")
 
 
+class ResolveBulkRequest(BaseModel):
+    action: str = Field(..., description="keep_both | delete_this | delete_twin, applied to every matching pair")
+    max_day_gap: int = Field(default=0, ge=0, le=3, description="Only pairs whose dates differ by at most this many days.")
+
+
 class ImportResult(BaseModel):
     batch_id: Optional[int] = None
     row_count: int

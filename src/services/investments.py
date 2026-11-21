@@ -25,13 +25,13 @@ _EPS = 1e-6
 _ISIN = r"[A-Z]{2}[A-Z0-9]{9}[0-9]"
 _ISIN_RE = re.compile(rf"\b({_ISIN})\b")
 _QTY_RE = re.compile(r"quantity:\s*([0-9]+(?:[.,][0-9]+)?)", re.IGNORECASE)
-_DIVIDEND_RE = re.compile(r"dividend|dividendo|cedola|coupon", re.IGNORECASE)
+_DIVIDEND_RE = re.compile(r"dividend|dividendo|cedola|coupon|interest payment|interessi su titoli", re.IGNORECASE)
 _SELL_RE = re.compile(r"\b(sell|vendita|venduto|rimborso)\b", re.IGNORECASE)
 _BUY_RE = re.compile(r"\b(buy|acquisto|savings plan|piano di accumulo)\b", re.IGNORECASE)
 # wording the bank puts before the instrument name
 _LEAD_RE = re.compile(
-    r"^(commercio\s+)?(buy trade|sell trade|savings plan execution|rendimento\s+cash\s+dividend\s+for\s+isin|"
-    r"acquisto|vendita|to)\s+",
+    r"^(commercio\s+|rendimento\s+)?(buy trade|sell trade|savings plan execution|cash\s+dividend\s+for\s+isin|"
+    r"interest\s+payment\s+for\s+isin|acquisto|vendita|to)\s+",
     re.IGNORECASE,
 )
 
@@ -112,16 +112,32 @@ class InvestmentService:
     def __init__(self, session: Session):
         self.session = session
 
-    def portfolio(self) -> Dict[str, Any]:
+    def _rows(self) -> List[Transaction]:
         texts = investment_texts(self.session)
-        rows: List[Transaction] = []
-        if texts:
-            rows = (
-                self.session.query(Transaction)
-                .filter(Transaction.category.in_(texts), Transaction.is_transfer.is_(False))
-                .order_by(Transaction.date, Transaction.id)
-                .all()
-            )
+        if not texts:
+            return []
+        return (
+            self.session.query(Transaction)
+            .filter(Transaction.category.in_(texts), Transaction.is_transfer.is_(False))
+            .order_by(Transaction.date, Transaction.id)
+            .all()
+        )
+
+    def positions_by_account(self) -> Dict[Optional[int], List[Dict[str, Any]]]:
+        """Positions grouped by the account the trades were booked on (the cash account of the broker)."""
+        grouped: Dict[Optional[int], Dict[str, List[Trade]]] = defaultdict(lambda: defaultdict(list))
+        for t in self._rows():
+            trade = parse_trade(t.description or "", t.amount, t.date)
+            grouped[t.account_id][trade.key].append(trade)
+        out: Dict[Optional[int], List[Dict[str, Any]]] = {}
+        for account_id, by_key in grouped.items():
+            positions = [self._position(key, items) for key, items in by_key.items()]
+            positions.sort(key=lambda p: (-p["invested"], p["name"]))
+            out[account_id] = positions
+        return out
+
+    def portfolio(self) -> Dict[str, Any]:
+        rows = self._rows()
         trades = [parse_trade(t.description or "", t.amount, t.date) for t in rows]
 
         by_instrument: Dict[str, List[Trade]] = defaultdict(list)

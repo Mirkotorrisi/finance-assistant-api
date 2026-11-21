@@ -27,7 +27,7 @@ CONSENT = {
     "session_ref": "ref-1",
     "valid_until": "2027-05-20T10:00:00",
     "accounts": [
-        {"identification_hash": "h-cc", "bank_uid": "uid-1", "iban_masked": "IT60 •••• 0123", "label": "Conto MyGenius", "currency": "EUR", "cash_account_type": "CACC"},
+        {"identification_hash": "h-cc-" + "x" * 130, "bank_uid": "uid-1", "iban_masked": "IT60 •••• 0123", "label": "Conto MyGenius", "currency": "EUR", "cash_account_type": "CACC"},
         {"identification_hash": "h-card", "bank_uid": "uid-2", "iban_masked": None, "label": "Genius Card", "currency": "EUR", "cash_account_type": "CARD"},
     ],
 }
@@ -79,8 +79,9 @@ def test_renewal_keeps_the_links_and_refreshes_the_handles(client, project):
     renewed = client.post("/api/bank-connections", json=renewed_body, headers=headers).json()
     assert renewed["id"] == conn["id"] and renewed["session_ref"] == "ref-2"
     by_hash = {a["identification_hash"]: a for a in renewed["accounts"]}
-    assert by_hash["h-cc"]["account_id"] == bank and by_hash["h-cc"]["bank_uid"] == "uid-9"
-    assert by_hash["h-cc"]["last_transaction_date"] == "2026-11-20"
+    long_hash = "h-cc-" + "x" * 130
+    assert by_hash[long_hash]["account_id"] == bank and by_hash[long_hash]["bank_uid"] == "uid-9"
+    assert by_hash[long_hash]["last_transaction_date"] == "2026-11-20"
     assert "h-new" in by_hash and "h-card" in by_hash  # accounts no longer exposed keep their row
 
 
@@ -159,6 +160,11 @@ def test_bank_rows_that_resemble_statement_rows_are_kept_and_flagged(client, pro
     r2 = client.post(f"/api/imports/suspects/{by_ext['B2']['id']}/resolve", json={"action": "delete_twin"}, headers=headers)
     assert r2.status_code == 200
     assert client.get("/api/imports/suspects", headers=headers).json() == []
+    # the statement row that won carries the bank's reference now: the same movement is skipped next time
+    resync = client.post("/api/imports", json={"account_id": bank, "source": "bank", "transactions": rows(
+        ("2026-11-11", -45.0, "ESSELUNGA SPA", {"external_id": "B1"}),
+    )}, headers=headers).json()
+    assert resync["added_count"] == 0 and resync["skipped_count"] == 1
     remaining = client.get("/api/transactions", headers=headers).json()
     descriptions = sorted(t["description"] for t in remaining)
     assert descriptions == ["ESSELUNGA SPA", "ESSELUNGA SPA", "NETFLIX", "PAGAMENTO POS ESSELUNGA MILANO"]
@@ -174,3 +180,23 @@ def test_a_statement_row_claimed_once_is_not_claimed_twice(client, project):
     )}, headers=headers).json()
     flagged = [t for t in synced["transactions"] if t["duplicate_of"]]
     assert len(flagged) == 1 and flagged[0]["external_id"] == "X1"  # the closest one claims the twin
+
+
+def test_bulk_resolve_settles_same_day_pairs_only(client, project):
+    headers, bank = project
+    client.post("/api/imports", json={"account_id": bank, "transactions": rows(
+        ("2026-11-10", -45.0, "PAGAMENTO POS ESSELUNGA", {}),
+        ("2026-11-12", -9.9, "NETFLIX.COM", {}),
+    )}, headers=headers)
+    client.post("/api/imports", json={"account_id": bank, "source": "bank", "transactions": rows(
+        ("2026-11-10", -45.0, "ESSELUNGA SPA", {"external_id": "B1"}),     # same day
+        ("2026-11-13", -9.9, "NETFLIX", {"external_id": "B2"}),           # one day later
+    )}, headers=headers)
+    assert len(client.get("/api/imports/suspects", headers=headers).json()) == 2
+    done = client.post("/api/imports/suspects/resolve-bulk", json={"action": "delete_this", "max_day_gap": 0}, headers=headers).json()
+    assert done == {"resolved": 1, "action": "delete_this", "max_day_gap": 0, "remaining": 1}
+    left = client.get("/api/imports/suspects", headers=headers).json()
+    assert left[0]["transaction"]["external_id"] == "B2"
+    kept = [t for t in client.get("/api/transactions", headers=headers).json() if t["description"] == "PAGAMENTO POS ESSELUNGA"]
+    assert kept[0]["external_id"] == "B1"  # the statement row inherited the bank's reference
+    assert client.post("/api/imports/suspects/resolve-bulk", json={"action": "nope"}, headers=headers).status_code == 400

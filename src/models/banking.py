@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class BankAccountIn(BaseModel):
-    identification_hash: str = Field(..., max_length=128, description="The bank's stable identity of the account.")
+    identification_hash: str = Field(..., max_length=512, description="The bank's stable identity of the account (an opaque token, can be long).")
     bank_uid: str | None = Field(default=None, max_length=64, description="Per-session handle used by the API calls.")
     iban_masked: str | None = Field(default=None, max_length=40, description="e.g. IT60 •••• 0123 (never the full IBAN).")
     label: str | None = Field(default=None, max_length=200)

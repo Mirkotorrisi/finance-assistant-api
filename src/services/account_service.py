@@ -1,9 +1,12 @@
-from typing import List, Optional, Dict, Any
+from typing import Any
+
+from sqlalchemy import and_, case, desc, extract, func
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract, case, desc, and_
+
 from src.database.models import Account, Transaction
 from src.repositories.account_repository import AccountRepository
 from src.services.investments import investment_texts, not_investment
+
 
 class AccountService:
     def __init__(self, session: Session):
@@ -12,20 +15,34 @@ class AccountService:
 
     # --- Account Operations ---
 
-    def create_account(self, name: str, account_type: str, currency: str = "EUR", is_active: bool = True, current_balance: float = 0.0) -> Dict[str, Any]:
+    def create_account(self, name: str, account_type: str, currency: str = "EUR", is_active: bool = True, current_balance: float = 0.0) -> dict[str, Any]:
         account = Account(name=name, type=account_type, currency=currency, is_active=is_active, current_balance=current_balance)
         created = self.account_repo.create(account)
         return created.to_dict()
 
-    def get_account(self, account_id: int) -> Optional[Dict[str, Any]]:
+    def _with_balances(self, accounts: list[Account]) -> list[dict[str, Any]]:
+        """Account dicts whose ``current_balance`` is what the account holds today (recorded balance plus the
+        transactions since, or transactions alone), with ``balance_basis`` saying which."""
+        from src.services.net_worth_service import NetWorthService
+
+        cells = NetWorthService(self.session).current_balances(active_only=False)
+        out = []
+        for acc in accounts:
+            data = acc.to_dict()
+            cell = cells.get(acc.id) or {"balance": None, "basis": "none"}
+            data["current_balance"] = cell["balance"] if cell["balance"] is not None else 0.0
+            data["balance_basis"] = cell["basis"]
+            out.append(data)
+        return out
+
+    def get_account(self, account_id: int) -> dict[str, Any] | None:
         account = self.account_repo.get_by_id(account_id)
-        return account.to_dict() if account else None
+        return self._with_balances([account])[0] if account else None
 
-    def list_accounts(self, active_only: bool = True) -> List[Dict[str, Any]]:
-        accounts = self.account_repo.list_all(active_only)
-        return [acc.to_dict() for acc in accounts]
+    def list_accounts(self, active_only: bool = True) -> list[dict[str, Any]]:
+        return self._with_balances(self.account_repo.list_all(active_only))
 
-    def update_account(self, account_id: int, updates: dict) -> Optional[Dict[str, Any]]:
+    def update_account(self, account_id: int, updates: dict) -> dict[str, Any] | None:
         """Update an account."""
         updated = self.account_repo.update(account_id, updates)
         return updated.to_dict() if updated else None
@@ -35,17 +52,18 @@ class AccountService:
         return self.account_repo.delete(account_id)
 
     def get_account_balance(self, account_id: int) -> float:
-        """Get current balance for an account by summing all its transactions."""
-        result = self.session.query(func.sum(Transaction.amount)).filter(
-            Transaction.account_id == account_id
-        ).scalar()
-        return round(result or 0.0, 2)
+        """What the account holds today: its latest recorded balance plus the transactions since, or the sum of
+        its transactions when no balance was ever recorded."""
+        account = self.account_repo.get_by_id(account_id)
+        if account is None:
+            return 0.0
+        return float(self._with_balances([account])[0]["current_balance"])
 
     # --- Aggregates from Transactions ---
 
     def get_total_balance_for_month(self, year: int, month: int) -> float:
         """Get total balance (cumulative) across all accounts up to end of given month."""
-        from sqlalchemy import or_, and_
+        from sqlalchemy import and_, or_
         result = self.session.query(func.sum(Transaction.amount)).filter(
             or_(
                 extract('year', Transaction.date) < year,
@@ -86,7 +104,7 @@ class AccountService:
         ).scalar()
         return round(result or 0.0, 2)
 
-    def get_balance_trend(self, account_id: Optional[int] = None, num_months: int = 12) -> List[Dict[str, Any]]:
+    def get_balance_trend(self, account_id: int | None = None, num_months: int = 12) -> list[dict[str, Any]]:
         """Get monthly aggregated balance trend from transactions."""
         counted = and_(Transaction.is_transfer.is_(False), not_investment(investment_texts(self.session)))
         query = self.session.query(

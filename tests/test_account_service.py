@@ -236,23 +236,23 @@ class TestDeleteAccount:
 # ---------------------------------------------------------------------------
 
 class TestGetAccountBalance:
-    """Tests for AccountService.get_account_balance."""
+    """Tests for AccountService.get_account_balance (the current balance comes from NetWorthService)."""
 
-    def test_returns_rounded_balance(self, account_service, mock_session):
-        """get_account_balance sums transaction amounts and rounds to 2 dp."""
-        mock_session.query.return_value.filter.return_value.scalar.return_value = 1234.5678
+    def test_returns_the_current_balance_of_the_account(self, account_service, mock_account_repo, monkeypatch):
+        from src.services import net_worth_service
 
-        balance = account_service.get_account_balance(1)
+        mock_account_repo.get_by_id.return_value = Account(id=1, name="Main", type="checking", currency="EUR")
+        monkeypatch.setattr(net_worth_service.NetWorthService, "current_balances", lambda self, **kw: {1: {"balance": 1234.57, "basis": "snapshot"}})
+        assert account_service.get_account_balance(1) == 1234.57
 
-        assert balance == 1234.57
+    def test_returns_zero_when_nothing_is_known(self, account_service, mock_account_repo, monkeypatch):
+        from src.services import net_worth_service
 
-    def test_returns_zero_when_no_transactions(self, account_service, mock_session):
-        """get_account_balance returns 0.0 when there are no transactions."""
-        mock_session.query.return_value.filter.return_value.scalar.return_value = None
-
-        balance = account_service.get_account_balance(1)
-
-        assert balance == 0.0
+        mock_account_repo.get_by_id.return_value = Account(id=1, name="Main", type="checking", currency="EUR")
+        monkeypatch.setattr(net_worth_service.NetWorthService, "current_balances", lambda self, **kw: {1: {"balance": None, "basis": "none"}})
+        assert account_service.get_account_balance(1) == 0.0
+        mock_account_repo.get_by_id.return_value = None
+        assert account_service.get_account_balance(99) == 0.0
 
 
 # ---------------------------------------------------------------------------

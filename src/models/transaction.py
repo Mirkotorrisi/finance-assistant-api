@@ -87,6 +87,9 @@ class TransactionResponse(BaseModel):
     is_transfer: bool = Field(default=False, description="Money moved between own accounts: not spending or income.")
     transfer_pair_id: Optional[int] = Field(default=None, description="The other half of the transfer.")
     import_batch_id: Optional[int] = Field(default=None, description="The statement import that added it, if any.")
+    source: str = Field(default="statement", description="Where the row came from: statement (upload), bank (API sync), manual.")
+    external_id: Optional[str] = Field(default=None, description="The bank's own reference of the movement, when known.")
+    duplicate_of: Optional[int] = Field(default=None, description="A stored row this bank row may duplicate (to settle).")
     category_label: Optional[str] = Field(default=None, description="The blueprint's label for the category, when it knows it.")
     category_source: str = Field(default="user", description="Who decided the category: user, rule, file, ai, fallback or legacy.")
     confidence: Optional[float] = Field(default=None, description="Confidence of an AI-chosen category (0-1).")
@@ -95,11 +98,15 @@ class TransactionResponse(BaseModel):
 
 
 class BalanceResponse(BaseModel):
-    """Total balance computed from all transactions."""
+    """The current total balance: recorded balances plus the transactions since them (accounts without a recorded
+    balance count their transactions)."""
 
-    model_config = ConfigDict(json_schema_extra={"example": {"balance": 2350.75}})
+    model_config = ConfigDict(json_schema_extra={"example": {"balance": 2350.75, "basis": "snapshots"}})
 
-    balance: float = Field(..., description="Current total balance across all transactions.")
+    balance: float = Field(..., description="Current total balance across the active accounts.")
+    basis: Optional[str] = Field(default=None, description="snapshots | transactions | mixed: what the figure rests on.")
+    anchored_accounts: Optional[int] = Field(default=None, description="Accounts whose balance rests on a recorded balance.")
+    accounts: Optional[int] = Field(default=None, description="Active accounts counted.")
 
 
 class CategoryUpdateItem(BaseModel):

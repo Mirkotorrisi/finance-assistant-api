@@ -1,25 +1,27 @@
-from typing import List, Optional, Dict, Any
 import datetime
-from sqlalchemy.orm import Session
+from typing import Any
+
 from sqlalchemy.exc import IntegrityError
-from src.database.models import Transaction, Category, Account
-from src.repositories.transaction_repository import TransactionRepository
-from src.repositories.category_repository import CategoryRepository
+from sqlalchemy.orm import Session
+
 from src.blueprint import Blueprint
-from src.database.models import Workspace
+from src.database.models import Account, Category, Transaction, Workspace
+from src.repositories.category_repository import CategoryRepository
+from src.repositories.transaction_repository import TransactionRepository
 from src.services.fingerprint import compute_fingerprint
 from src.services.merchant import merchant_key
+
 
 class TransactionService:
     def __init__(self, session: Session):
         self.session = session
         self.transaction_repo = TransactionRepository(session)
         self.category_repo = CategoryRepository(session)
-        self._blueprint_cache: Optional[Blueprint] = None
+        self._blueprint_cache: Blueprint | None = None
 
     # ------------------------------------------------------------------ blueprint helpers
 
-    def _blueprint(self) -> Optional[Blueprint]:
+    def _blueprint(self) -> Blueprint | None:
         """The workspace's blueprint (None when the session has no workspace or the document is unusable)."""
         if self._blueprint_cache is None:
             workspace_id = self.session.info.get("workspace_id")
@@ -37,7 +39,7 @@ class TransactionService:
         key = blueprint.resolve_category(text) if blueprint and text else None
         return key or text
 
-    def _with_label(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _with_label(self, data: dict[str, Any]) -> dict[str, Any]:
         blueprint = self._blueprint()
         key = blueprint.resolve_category(data["category"]) if blueprint else None
         data["category_label"] = blueprint.nodes()[key].label if key else None
@@ -45,11 +47,11 @@ class TransactionService:
 
     def list_transactions(
         self, 
-        category: Optional[str] = None, 
-        start_date: Optional[str] = None, 
-        end_date: Optional[str] = None,
-        account_id: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        category: str | None = None, 
+        start_date: str | None = None, 
+        end_date: str | None = None,
+        account_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """List transactions with optional filters."""
         # Convert string dates to date objects if present
         start_date_obj = datetime.datetime.fromisoformat(start_date).date() if start_date else None
@@ -73,8 +75,8 @@ class TransactionService:
         description: str, 
         date: str = None,
         currency: str = None,
-        account_id: Optional[int] = None
-    ) -> Dict[str, Any]:
+        account_id: int | None = None
+    ) -> dict[str, Any]:
         """Add a new transaction."""
         if not date:
             date_str = datetime.date.today().isoformat()
@@ -105,7 +107,7 @@ class TransactionService:
         added = self.transaction_repo.add(new_transaction)
         return self._with_label(added.to_dict())
 
-    def add_transactions_bulk(self, transactions_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def add_transactions_bulk(self, transactions_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Add multiple transactions at once."""
         if not transactions_data:
             return []
@@ -152,10 +154,10 @@ class TransactionService:
     def update_transaction(
         self,
         transaction_id: int,
-        updates: Dict[str, Any],
-        source: Optional[str] = None,
-        confidence: Optional[float] = None,
-    ) -> Optional[Dict[str, Any]]:
+        updates: dict[str, Any],
+        source: str | None = None,
+        confidence: float | None = None,
+    ) -> dict[str, Any] | None:
         """Update a transaction by ID.
 
         A category change is a decision: by default it is the user's (confirmed). Pass ``source`` ('ai', ...) when
@@ -185,17 +187,25 @@ class TransactionService:
         self.session.commit()
         return self._with_label(updated.to_dict())
 
-    def remap_category(self, from_category: str, to_category: str) -> Dict[str, Any]:
+    def remap_category(self, from_category: str, to_category: str) -> dict[str, Any]:
         """Move every transaction of a category (case-insensitive) to another one."""
         self._ensure_category_exists(to_category)
         changed = self.transaction_repo.rename_category(from_category, to_category)
         return {"from": from_category, "to": to_category, "transactions_updated": changed}
 
     def get_balance(self) -> float:
-        """Get the current balance by summing all transactions."""
-        return self.transaction_repo.get_total_balance()
+        """The current total balance: recorded balances plus the transactions since them, transactions alone
+        for accounts that never had one (see ``NetWorthService.current_balances``)."""
+        from src.services.net_worth_service import NetWorthService
 
-    def get_distinct_categories(self) -> List[str]:
+        return NetWorthService(self.session).total_balance()["balance"]
+
+    def get_balance_details(self) -> dict[str, Any]:
+        from src.services.net_worth_service import NetWorthService
+
+        return NetWorthService(self.session).total_balance()
+
+    def get_distinct_categories(self) -> list[str]:
         """Return sorted list of distinct category names from existing transactions."""
         return self.transaction_repo.get_distinct_categories()
 

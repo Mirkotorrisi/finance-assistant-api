@@ -1,11 +1,13 @@
 """Service for UI-driven financial aggregation and summary data."""
 
-from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, extract, case
 from datetime import datetime
+from typing import Any
+
+from sqlalchemy import and_, case, extract, func
+from sqlalchemy.orm import Session
+
 from src.blueprint import Blueprint
-from src.database.models import Account, Transaction, Category, Workspace
+from src.database.models import Account, Transaction, Workspace
 from src.services.investments import investment_texts, not_investment
 
 
@@ -18,7 +20,7 @@ class FinancialSummaryService:
     
     def __init__(self, session: Session):
         self.session = session
-        self._blueprint: Optional[Blueprint] = None
+        self._blueprint: Blueprint | None = None
         self._blueprint_loaded = False
 
     def _display_name(self, category: str) -> str:
@@ -38,7 +40,7 @@ class FinancialSummaryService:
         key = self._blueprint.resolve_category(category) if self._blueprint else None
         return self._blueprint.nodes()[key].label if key else category
     
-    def get_monthly_summary(self, month: str) -> Dict[str, Any]:
+    def get_monthly_summary(self, month: str) -> dict[str, Any]:
         """Get monthly financial summary for a specific month.
         
         Args:
@@ -92,7 +94,7 @@ class FinancialSummaryService:
         start_date: str,
         end_date: str,
         group_by: str = "category"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get spending distribution for a date range.
         
         Args:
@@ -220,7 +222,7 @@ class FinancialSummaryService:
             "distribution": distribution
         }
     
-    def get_account_breakdown(self) -> Dict[str, Any]:
+    def get_account_breakdown(self) -> dict[str, Any]:
         """Get current account breakdown by type.
         
         Returns:
@@ -229,18 +231,16 @@ class FinancialSummaryService:
             - by_type: Breakdown by account type (liquidity, investments, other)
             - accounts: List of individual account balances with percentages
         """
-        # For each active account, sum all transactions to get current balance
-        account_balances = self.session.query(
-            Account.id,
-            Account.name,
-            Account.type,
-            Account.currency,
-            func.coalesce(func.sum(Transaction.amount), 0.0).label('balance')
-        ).outerjoin(
-            Transaction, Account.id == Transaction.account_id
-        ).filter(
-            Account.is_active
-        ).group_by(Account.id, Account.name, Account.type, Account.currency).all()
+        # the current balance of each active account: recorded balance plus the transactions since, else transactions
+        from src.services.net_worth_service import NetWorthService
+
+        cells = NetWorthService(self.session).current_balances()
+        accounts = self.session.query(Account).filter(Account.is_active).all()
+        account_balances = [
+            type("Row", (), {"id": acc.id, "name": acc.name, "type": acc.type, "currency": acc.currency,
+                             "balance": (cells.get(acc.id) or {}).get("balance") or 0.0})()
+            for acc in accounts
+        ]
 
         if not account_balances:
             return {
@@ -311,7 +311,7 @@ class FinancialSummaryService:
             "accounts": accounts_list
         }
     
-    def _get_top_categories(self, year: int, month: int, limit: int = 5) -> List[Dict[str, Any]]:
+    def _get_top_categories(self, year: int, month: int, limit: int = 5) -> list[dict[str, Any]]:
         """Get top spending categories for a specific month.
         
         Args:
@@ -339,7 +339,7 @@ class FinancialSummaryService:
             Transaction.category
         ).all()
 
-        merged: Dict[str, Dict[str, float]] = {}
+        merged: dict[str, dict[str, float]] = {}
         for row in result:  # spellings of one category (key, label, old name) add up
             slot = merged.setdefault(self._display_name(row.category), {"amount": 0.0, "count": 0})
             slot["amount"] += row.total_amount

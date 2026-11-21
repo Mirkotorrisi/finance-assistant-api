@@ -192,43 +192,30 @@ class TestGetSpendingDistribution:
 class TestGetAccountBreakdown:
     """Tests for get_account_breakdown method."""
     
-    def test_with_multiple_accounts(self, financial_summary_service, mock_session):
-        """Test with multiple accounts of different types."""
-        # Mock account balance rows (from outerjoin query)
-        row1 = Mock()
-        row1.id = 1
-        row1.balance = 5000.0
-        row1.name = "Checking Account"
-        row1.type = "checking"
-        row1.currency = "EUR"
-        
-        row2 = Mock()
-        row2.id = 2
-        row2.balance = 10000.0
-        row2.name = "Investment Account"
-        row2.type = "investment"
-        row2.currency = "EUR"
-        
-        row3 = Mock()
-        row3.id = 3
-        row3.balance = 2000.0
-        row3.name = "Savings Account"
-        row3.type = "savings"
-        row3.currency = "EUR"
-        
-        mock_query = MagicMock()
-        mock_query.outerjoin.return_value.filter.return_value.group_by.return_value.all.return_value = [
-            row1, row2, row3
+    def test_with_multiple_accounts(self, financial_summary_service, mock_session, monkeypatch):
+        """Test with multiple accounts of different types (balances come from NetWorthService.current_balances)."""
+        from src.services import net_worth_service
+
+        def account(id_, name, type_):
+            a = Mock()
+            a.id, a.name, a.type, a.currency = id_, name, type_, "EUR"
+            return a
+
+        mock_session.query.return_value.filter.return_value.all.return_value = [
+            account(1, "Checking Account", "checking"), account(2, "Investment Account", "investment"), account(3, "Savings Account", "savings"),
         ]
-        mock_session.query.return_value = mock_query
-        
+        monkeypatch.setattr(
+            net_worth_service.NetWorthService, "current_balances",
+            lambda self, **kw: {1: {"balance": 5000.0, "basis": "snapshot"}, 2: {"balance": 10000.0, "basis": "snapshot"}, 3: {"balance": 2000.0, "basis": "transactions"}},
+        )
+
         result = financial_summary_service.get_account_breakdown()
-        
+
         assert result["total_balance"] == 17000.0
         assert result["by_type"]["liquidity"]["amount"] == 7000.0
         assert result["by_type"]["investments"]["amount"] == 10000.0
         assert result["by_type"]["other"]["amount"] == 0.0
-        
+
         # Verify percentages
         assert round(result["by_type"]["liquidity"]["percent"], 2) == 41.18
         assert round(result["by_type"]["investments"]["percent"], 2) == 58.82

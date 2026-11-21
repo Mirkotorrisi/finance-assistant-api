@@ -8,6 +8,7 @@ each with the numbers behind it, so that whatever the agent recommends can cite 
 from __future__ import annotations
 
 import calendar
+import logging
 from datetime import date
 from typing import Any
 
@@ -18,6 +19,8 @@ from src.services.investments import InvestmentService
 from src.services.net_worth_service import NetWorthService
 from src.services.profile_service import ProfileService
 from src.services.spending_report_service import SpendingReportService
+
+logger = logging.getLogger(__name__)
 
 EXPENSIVE_DEBT_RATE = 5.0  # percent per year: above this, repaying beats most expected returns after tax
 MIN_SAVING_RATE = 0.10
@@ -70,6 +73,20 @@ class AdvisorService:
         emergency = self._emergency_fund(profile, cash_flow, latest)
         debts = self._debts(profile)
         allocation = self._allocation(profile, latest)
+        try:
+            from src.services.portfolio_service import PortfolioService
+
+            valued = PortfolioService(self.session).valued_positions(today)
+            allocation["invested_by_asset_class"] = valued["allocation"]
+            allocation["invested_value"] = valued["total_value"]
+            allocation["unknown_positions"] = valued["unknown_positions"]
+            if valued["total_value"]:
+                allocation["note"] = (
+                    "The invested part is split by asset class from the valued positions (last close, or cost where "
+                    "no price exists); cash is the liquid balance of the accounts."
+                )
+        except Exception:  # noqa: BLE001 - the review must not fail because of the market data
+            logger.exception("Advisor review: portfolio valuation unavailable")
 
         checks = self._checks(profile, profile_response, cash_flow, emergency, debts, expenses, wealth)
         open_decisions = self.profiles.list_decisions("proposed") + self.profiles.list_decisions("accepted")

@@ -170,5 +170,6 @@ async def get_distinct_categories(service: TransactionService = Depends(get_tran
     response_description="Sum of all transaction amounts",
 )
 async def get_balance(service: TransactionService = Depends(get_transaction_service)):
-    """Return the total balance calculated by summing every transaction amount."""
-    return {"balance": service.get_balance()}
+    """The current total balance: each account's latest recorded balance (bank sync, typed, sheet) plus the
+    transactions since it; accounts that never had one count their transactions."""
+    return service.get_balance_details()

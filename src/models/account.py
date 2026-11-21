@@ -53,6 +53,10 @@ class AccountUpdate(BaseModel):
     )
     is_active: Optional[bool] = Field(default=None, description="Set account active/inactive.")
 
+    securities_account_id: Optional[int] = Field(
+        default=None,
+        description="The investment account whose value the trades booked on this cash account build (e.g. the broker's cash account → its securities account).",
+    )
 
 class AccountResponse(BaseModel):
     """Representation of an account returned by the API."""
@@ -76,6 +80,8 @@ class AccountResponse(BaseModel):
     currency: str = Field(..., description="ISO 4217 currency code.")
     is_active: bool = Field(..., description="Whether the account is active.")
     current_balance: float = Field(..., description="Current balance of the account.")
+    balance_basis: Optional[str] = Field(default=None, description="snapshot | derived | carried | transactions | none.")
+    securities_account_id: Optional[int] = Field(default=None, description="Investment account valued from the trades booked here.")
 
 
 class AccountBalanceResponse(BaseModel):

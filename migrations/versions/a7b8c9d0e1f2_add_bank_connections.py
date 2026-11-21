@@ -65,7 +65,7 @@ def upgrade() -> None:
             sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
             sa.Column("workspace_id", sa.Integer(), sa.ForeignKey("workspaces.id"), nullable=False),
             sa.Column("connection_id", sa.Integer(), sa.ForeignKey("bank_connections.id"), nullable=False),
-            sa.Column("identification_hash", sa.String(length=128), nullable=False),
+            sa.Column("identification_hash", sa.String(length=512), nullable=False),
             sa.Column("bank_uid", sa.String(length=64), nullable=True),
             sa.Column("iban_masked", sa.String(length=40), nullable=True),
             sa.Column("label", sa.String(length=200), nullable=True),

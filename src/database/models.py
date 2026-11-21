@@ -83,6 +83,9 @@ class Account(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     current_balance = Column(Float, nullable=False, default=0.0)
+    # trades booked on this (cash) account build positions valued on that (investment) account: Trade Republic's
+    # cash account feeds "Trade Republic titoli". NULL = the trades value this same account.
+    securities_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     
     # Relationships
     transactions = relationship("Transaction", back_populates="account", cascade="all, delete-orphan")
@@ -102,7 +105,8 @@ class Account(Base):
             "type": self.type,
             "currency": self.currency,
             "is_active": self.is_active,
-            "current_balance": self.current_balance
+            "current_balance": self.current_balance,
+            "securities_account_id": self.securities_account_id,
         }
 
 
@@ -274,7 +278,7 @@ class BankAccountLink(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
     connection_id = Column(Integer, ForeignKey("bank_connections.id"), nullable=False, index=True)
-    identification_hash = Column(String(128), nullable=False)
+    identification_hash = Column(String(512), nullable=False)  # banks send long opaque tokens (UniCredit: 133 chars)
     bank_uid = Column(String(64), nullable=True)
     iban_masked = Column(String(40), nullable=True)
     label = Column(String(200), nullable=True)  # product / holder name as the bank gives it
@@ -306,6 +310,81 @@ class BankAccountLink(Base):
             "last_balance": self.last_balance,
             "last_balance_date": self.last_balance_date.isoformat() if self.last_balance_date else None,
         }
+
+
+class Instrument(Base):
+    """A security the user holds or held: identified by ISIN, priced through a symbol on a price source.
+
+    Global (an ISIN is the same in every project). ``valuation`` says how its value is found: ``market`` (quantity
+    held × last close), ``cost`` (money-market funds and anything without units: value = net cash in), ``manual``
+    (the user types a price). ``asset_class`` feeds the IPS allocation.
+    """
+
+    __tablename__ = "instruments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    isin = Column(String(12), nullable=True, unique=True, index=True)
+    key = Column(String(120), nullable=False, unique=True)  # ISIN, else the normalised name (as investments.py keys trades)
+    name = Column(String(200), nullable=False)
+    type = Column(String(16), nullable=False, default="other")  # etf | stock | bond | fund | certificate | other
+    currency = Column(String(3), nullable=False, default="EUR")
+    asset_class = Column(String(16), nullable=False, default="other")  # equity | bonds | cash | real_estate | commodities | crypto | other
+    valuation = Column(String(8), nullable=False, default="market")  # market | cost | manual
+    price_symbol = Column(String(40), nullable=True)  # e.g. LYY0.DEX, AAPL
+    symbol_candidates = Column(JSON, nullable=True)  # other listings to try when the symbol gives no data
+    price_source = Column(String(24), nullable=True)  # alphavantage | manual
+    manual_price = Column(Float, nullable=True)
+    manual_price_date = Column(Date, nullable=True)
+    last_error = Column(String(300), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "isin": self.isin,
+            "key": self.key,
+            "name": self.name,
+            "type": self.type,
+            "currency": self.currency,
+            "asset_class": self.asset_class,
+            "valuation": self.valuation,
+            "price_symbol": self.price_symbol,
+            "symbol_candidates": self.symbol_candidates or [],
+            "price_source": self.price_source,
+            "manual_price": self.manual_price,
+            "manual_price_date": self.manual_price_date.isoformat() if self.manual_price_date else None,
+            "last_error": self.last_error,
+        }
+
+
+class Price(Base):
+    """A daily close of an instrument, in the instrument's currency. Global cache, one row per instrument and day."""
+
+    __tablename__ = "prices"
+    __table_args__ = (UniqueConstraint("instrument_id", "date", name="uix_prices_instrument_date"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instrument_id = Column(Integer, ForeignKey("instruments.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    close = Column(Float, nullable=False)
+    currency = Column(String(3), nullable=False, default="EUR")
+    source = Column(String(24), nullable=False, default="alphavantage")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class FxRate(Base):
+    """Daily exchange rate: 1 unit of ``base`` = ``rate`` units of ``quote`` (e.g. EUR→USD 1.08). Global cache."""
+
+    __tablename__ = "fx_rates"
+    __table_args__ = (UniqueConstraint("base", "quote", "date", name="uix_fx_rates_pair_date"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    base = Column(String(3), nullable=False)
+    quote = Column(String(3), nullable=False)
+    date = Column(Date, nullable=False, index=True)
+    rate = Column(Float, nullable=False)
+    source = Column(String(24), nullable=False, default="alphavantage")
 
 
 class Category(Base):

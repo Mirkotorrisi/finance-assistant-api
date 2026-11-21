@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.models.imports import ResolveSuspectRequest, ImportRequest, ImportResult, PairRequest
+from src.models.imports import ResolveBulkRequest, ResolveSuspectRequest, ImportRequest, ImportResult, PairRequest
 from src.routes.deps import resolve_workspace_id
 from src.services.import_service import ImportRequestError, ImportService
 
@@ -47,6 +47,13 @@ async def list_suspects(service: ImportService = Depends(get_import_service)) ->
     """Each item has the bank-synced ``transaction`` and the stored ``twin`` it resembles (same account and amount,
     a few days apart, different wording). Settle them with the resolve endpoint."""
     return service.list_suspects()
+
+
+@router.post("/api/imports/suspects/resolve-bulk", summary="Settle every suspect pair within a day gap")
+async def resolve_suspects_bulk(body: ResolveBulkRequest, service: ImportService = Depends(get_import_service)):
+    """``max_day_gap: 0`` settles the same-day pairs only (the safe default after a first sync over a period whose
+    statements were already uploaded); the action is the same as the single resolve."""
+    return _guard(lambda: service.resolve_suspects_bulk(body.action, body.max_day_gap))
 
 
 @router.post("/api/imports/suspects/{transaction_id}/resolve", summary="Settle a suspect duplicate")

@@ -338,26 +338,20 @@ class TestUpdateTransaction:
 # ---------------------------------------------------------------------------
 
 class TestGetBalance:
-    """Tests for TransactionService.get_balance."""
+    """Tests for TransactionService.get_balance (the figure comes from NetWorthService.total_balance)."""
 
-    def test_get_balance_delegates_to_repo(self, transaction_service, mock_transaction_repo):
-        """get_balance returns the value from the transaction repository."""
-        mock_transaction_repo.get_total_balance.return_value = 1500.0
+    def test_get_balance_reads_the_current_total(self, transaction_service, monkeypatch):
+        from src.services import net_worth_service
 
-        balance = transaction_service.get_balance()
+        monkeypatch.setattr(net_worth_service.NetWorthService, "total_balance", lambda self, today=None: {"balance": 1500.0, "basis": "snapshots"})
+        assert transaction_service.get_balance() == 1500.0
+        assert transaction_service.get_balance_details()["basis"] == "snapshots"
 
-        mock_transaction_repo.get_total_balance.assert_called_once()
-        assert balance == 1500.0
+    def test_get_balance_zero(self, transaction_service, monkeypatch):
+        from src.services import net_worth_service
 
-    def test_get_balance_zero(self, transaction_service, mock_transaction_repo):
-        """get_balance returns 0.0 when there are no transactions."""
-        mock_transaction_repo.get_total_balance.return_value = 0.0
-
-        balance = transaction_service.get_balance()
-
-        assert balance == 0.0
-
-
+        monkeypatch.setattr(net_worth_service.NetWorthService, "total_balance", lambda self, today=None: {"balance": 0.0, "basis": "transactions"})
+        assert transaction_service.get_balance() == 0.0
 # ---------------------------------------------------------------------------
 # _ensure_category_exists
 # ---------------------------------------------------------------------------

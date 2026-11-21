@@ -16,3 +16,6 @@ os.environ["FINANCE_DB_PATH"] = os.path.join(_TEST_DB_DIR, "finance-test.db")
 @pytest.fixture(autouse=True)
 def isolated_sqlite_file(tmp_path, monkeypatch):
     monkeypatch.setenv("FINANCE_DB_PATH", str(tmp_path / "finance-test.db"))
+    # never reach Alpha Vantage from the tests, and never start the price scheduler
+    monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+    monkeypatch.setenv("FINANCE_PRICES", "off")

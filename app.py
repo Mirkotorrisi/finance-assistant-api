@@ -46,8 +46,10 @@ from src.routes import (
     net_worth_router,
     profile_router,
     banking_router,
+    portfolio_router,
 )
 from src.database.init import close_database, init_database
+from src.market.scheduler import scheduler as price_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,7 +60,9 @@ async def lifespan(app_instance: FastAPI):
     """Lifecycle events for the FastAPI application."""
     logger.info("Initializing database...")
     init_database()
+    price_scheduler.start()  # no-op without ALPHAVANTAGE_API_KEY or with FINANCE_PRICES=off
     yield
+    await price_scheduler.stop()
     logger.info("Closing database...")
     close_database()
 
@@ -158,6 +162,7 @@ app.include_router(review_router)
 app.include_router(net_worth_router)
 app.include_router(profile_router)
 app.include_router(banking_router)
+app.include_router(portfolio_router)
 
 # The auto-generated MCP inlines every schema reference and cannot cope with the blueprint's recursive schema,
 # so it is built on a twin app without the workspace routes (agents use finance-mcp for those) and mounted here.

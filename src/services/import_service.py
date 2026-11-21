@@ -250,6 +250,9 @@ class ImportService:
         if action == "keep_both":
             row.duplicate_of = None
         elif action == "delete_this":
+            # the statement row IS that bank movement: give it the bank's reference so later syncs recognise it
+            if twin is not None and row.external_id and not twin.external_id:
+                twin.external_id = row.external_id
             self.session.delete(row)
         elif action == "delete_twin":
             if twin is not None:
@@ -262,6 +265,21 @@ class ImportService:
             raise ImportRequestError(400, "action must be keep_both, delete_this or delete_twin")
         self.session.commit()
         return {"resolved": transaction_id, "action": action}
+
+    def resolve_suspects_bulk(self, action: str, max_day_gap: int = 0) -> Dict[str, Any]:
+        """Settle every suspect pair whose dates are at most ``max_day_gap`` days apart with the same ``action``.
+        Same-day, same-amount pairs after a first sync over an already-imported period are the statement's own
+        rows in the bank's words: this is the one-click way to say so."""
+        if action not in ("keep_both", "delete_this", "delete_twin"):
+            raise ImportRequestError(400, "action must be keep_both, delete_this or delete_twin")
+        done = 0
+        for item in self.list_suspects():
+            a, b = item["transaction"], item["twin"]
+            gap = abs((datetime.date.fromisoformat(a["date"]) - datetime.date.fromisoformat(b["date"])).days)
+            if gap <= max_day_gap:
+                self.resolve_suspect(a["id"], action)
+                done += 1
+        return {"resolved": done, "action": action, "max_day_gap": max_day_gap, "remaining": len(self.list_suspects())}
 
     def _stored_counts(self, fingerprints: Iterable[str]) -> Dict[str, int]:
         wanted = list(fingerprints)
