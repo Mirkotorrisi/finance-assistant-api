@@ -13,6 +13,8 @@ from src.database.models import (
     BalanceSnapshot,
     BankAccountLink,
     BankConnection,
+    ChatMessage,
+    ChatSession,
     ClientProfile,
     ClientProfileVersion,
     ImportBatch,
@@ -27,6 +29,8 @@ from src.database.workspaces import create_workspace
 # Deleting a workspace must empty every scoped table (``scope.SCOPED_MODELS``), children before their parents, or
 # Postgres refuses the delete and SQLite (foreign keys off) keeps orphans. A test checks this list stays complete.
 DELETE_ORDER = (
+    ChatMessage,
+    ChatSession,
     Transaction,
     BalanceSnapshot,
     BankAccountLink,

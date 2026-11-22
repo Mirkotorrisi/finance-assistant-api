@@ -216,6 +216,66 @@ class AdvisorDecision(Base):
         }
 
 
+class ChatSession(Base):
+    """One conversation with the assistant: the history the chat page lists and reopens.
+
+    ``id`` is the client-generated session id the gateway already keys its agent processes by, so a stored
+    conversation and the live one are the same thing. Personal to ``user_id`` (the lightweight client identity)
+    inside a workspace; ``title`` is the first words of the first message unless the user renames it.
+    """
+
+    __tablename__ = "chat_sessions"
+
+    id = Column(String(80), primary_key=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    user_id = Column(String(80), nullable=False, index=True)
+    title = Column(String(200), nullable=False, default="")
+    backend = Column(String(16), nullable=True)  # claude | openai, whichever engine answered
+    message_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False, index=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "backend": self.backend,
+            "message_count": self.message_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ChatMessage(Base):
+    """A message of a chat session as the app showed it: the text, the components rendered next to it and the tools
+    the agent called. Tool arguments and results are not kept (they are in the data, not in the conversation)."""
+
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    session_id = Column(String(80), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(16), nullable=False)  # user | assistant
+    content = Column(Text, nullable=False, default="")
+    components = Column(JSON, nullable=True)  # the UI components the answer rendered (UIPlanComponent list)
+    tools = Column(JSON, nullable=True)  # names of the tools called while answering
+    error = Column(Text, nullable=True)  # the error the turn ended with, when it did
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "role": self.role,
+            "content": self.content or "",
+            "components": self.components or [],
+            "tools": self.tools or [],
+            "error": self.error,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class BankConnection(Base):
     """A PSD2 consent given to one bank (ASPSP) through the aggregator, and what we know about syncing it.
 

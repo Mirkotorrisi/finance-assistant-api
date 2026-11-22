@@ -47,6 +47,7 @@ from src.routes import (
     profile_router,
     banking_router,
     portfolio_router,
+    chat_history_router,
 )
 from src.database.init import close_database, init_database
 from src.market.scheduler import scheduler as price_scheduler
@@ -184,6 +185,7 @@ app.include_router(net_worth_router)
 app.include_router(profile_router)
 app.include_router(banking_router)
 app.include_router(portfolio_router)
+app.include_router(chat_history_router)
 
 # The auto-generated MCP inlines every schema reference and cannot cope with the blueprint's recursive schema,
 # so it is built on a twin app without the workspace routes (agents use finance-mcp for those) and mounted here.
